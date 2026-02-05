@@ -1,0 +1,211 @@
+/* Local Poppins font-face declarations pointing to existing TTF files.
+   This file is intended as a fallback/local source complementing the Google Fonts CDN.
+   Ensure this stylesheet is included in src/app.html:
+   <link rel="stylesheet" href="/fonts/poppins.css" />
+*/
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 100; /* Thin */
+  font-display: swap;
+  src:
+    local('Poppins Thin'),
+    local('Poppins-Thin'),
+    url('/fonts/Poppins-Thin.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: italic;
+  font-weight: 100; /* Thin Italic */
+  font-display: swap;
+  src:
+    local('Poppins Thin Italic'),
+    local('Poppins-ThinItalic'),
+    url('/fonts/Poppins-ThinItalic.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 200; /* ExtraLight */
+  font-display: swap;
+  src:
+    local('Poppins ExtraLight'),
+    local('Poppins-ExtraLight'),
+    url('/fonts/Poppins-ExtraLight.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: italic;
+  font-weight: 200; /* ExtraLight Italic */
+  font-display: swap;
+  src:
+    local('Poppins ExtraLight Italic'),
+    local('Poppins-ExtraLightItalic'),
+    url('/fonts/Poppins-ExtraLightItalic.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 300; /* Light */
+  font-display: swap;
+  src:
+    local('Poppins Light'),
+    local('Poppins-Light'),
+    url('/fonts/Poppins-Light.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: italic;
+  font-weight: 300; /* Light Italic */
+  font-display: swap;
+  src:
+    local('Poppins Light Italic'),
+    local('Poppins-LightItalic'),
+    url('/fonts/Poppins-LightItalic.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 400; /* Regular */
+  font-display: swap;
+  src:
+    local('Poppins Regular'),
+    local('Poppins'),
+    local('Poppins-Regular'),
+    url('/fonts/Poppins-Regular.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: italic;
+  font-weight: 400; /* Regular Italic */
+  font-display: swap;
+  src:
+    local('Poppins Italic'),
+    local('Poppins-Italic'),
+    url('/fonts/Poppins-Italic.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 500; /* Medium */
+  font-display: swap;
+  src:
+    local('Poppins Medium'),
+    local('Poppins-Medium'),
+    url('/fonts/Poppins-Medium.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: italic;
+  font-weight: 500; /* Medium Italic */
+  font-display: swap;
+  src:
+    local('Poppins Medium Italic'),
+    local('Poppins-MediumItalic'),
+    url('/fonts/Poppins-MediumItalic.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 600; /* SemiBold */
+  font-display: swap;
+  src:
+    local('Poppins SemiBold'),
+    local('Poppins-SemiBold'),
+    url('/fonts/Poppins-SemiBold.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: italic;
+  font-weight: 600; /* SemiBold Italic */
+  font-display: swap;
+  src:
+    local('Poppins SemiBold Italic'),
+    local('Poppins-SemiBoldItalic'),
+    url('/fonts/Poppins-SemiBoldItalic.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 700; /* Bold */
+  font-display: swap;
+  src:
+    local('Poppins Bold'),
+    local('Poppins-Bold'),
+    url('/fonts/Poppins-Bold.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: italic;
+  font-weight: 700; /* Bold Italic */
+  font-display: swap;
+  src:
+    local('Poppins Bold Italic'),
+    local('Poppins-BoldItalic'),
+    url('/fonts/Poppins-BoldItalic.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 800; /* ExtraBold */
+  font-display: swap;
+  src:
+    local('Poppins ExtraBold'),
+    local('Poppins-ExtraBold'),
+    url('/fonts/Poppins-ExtraBold.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: italic;
+  font-weight: 800; /* ExtraBold Italic */
+  font-display: swap;
+  src:
+    local('Poppins ExtraBold Italic'),
+    local('Poppins-ExtraBoldItalic'),
+    url('/fonts/Poppins-ExtraBoldItalic.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 900; /* Black */
+  font-display: swap;
+  src:
+    local('Poppins Black'),
+    local('Poppins-Black'),
+    url('/fonts/Poppins-Black.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: italic;
+  font-weight: 900; /* Black Italic */
+  font-display: swap;
+  src:
+    local('Poppins Black Italic'),
+    local('Poppins-BlackItalic'),
+    url('/fonts/Poppins-BlackItalic.ttf') format('truetype');
+}
+
+/* Notes:
+   - The design system uses `--font-sans` with 'Poppins' as the first family,
+     so these local faces will be preferred if available.
+   - We use font-display: swap to improve perceived performance.
+   - Google Fonts CDN is still included in src/app.html; this local file serves as fallback or offline support.
+*/

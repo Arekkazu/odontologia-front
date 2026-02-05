@@ -1,0 +1,487 @@
+/* Design tokens and base theme CSS variables for Odontología UI */
+
+/* Root theme: light (default) */
+:root {
+	/* Brand colors */
+	--color-brand-50: #f0f8f5;
+	--color-brand-100: #d9eee6;
+	--color-brand-200: #b6dccd;
+	--color-brand-300: #8cc9af;
+	--color-brand-400: #63b692;
+	--color-brand-500: #3aa375; /* Primary brand (green clinical) */
+	--color-brand-600: #2f845f;
+	--color-brand-700: #25664a;
+	--color-brand-800: #1b4835;
+	--color-brand-900: #112b20;
+
+	/* Accent colors (for warnings / highlights) */
+	--color-accent-50: #fff8ed;
+	--color-accent-100: #ffeacc;
+	--color-accent-200: #ffd49a;
+	--color-accent-300: #ffbe69;
+	--color-accent-400: #ffa737;
+	--color-accent-500: #ff9006; /* Hours extra indicator */
+	--color-accent-600: #d17405;
+	--color-accent-700: #a35804;
+	--color-accent-800: #743d03;
+	--color-accent-900: #462302;
+
+	/* Secondary palette (calm blue) */
+	--color-secondary-50: #f0f6fb;
+	--color-secondary-100: #d9e8f6;
+	--color-secondary-200: #bcd5ef;
+	--color-secondary-300: #94bee6;
+	--color-secondary-400: #68a3db;
+	--color-secondary-500: #3b89d1;
+	--color-secondary-600: #2f6faf;
+	--color-secondary-700: #24588d;
+	--color-secondary-800: #1a406a;
+	--color-secondary-900: #102947;
+
+	/* Semantic colors */
+	--color-success: #3aa375;
+	--color-warning: #ff9006;
+	--color-error: #d64e4e;
+	--color-info: #3b89d1;
+
+	/* Neutrals */
+	--color-white: #ffffff;
+	--color-black: #000000;
+
+	--color-gray-50: #f9fafb;
+	--color-gray-100: #f3f4f6;
+	--color-gray-200: #e5e7eb;
+	--color-gray-300: #d1d5db;
+	--color-gray-400: #9ca3af;
+	--color-gray-500: #6b7280;
+	--color-gray-600: #4b5563;
+	--color-gray-700: #374151;
+	--color-gray-800: #1f2937;
+	--color-gray-900: #111827;
+
+	/* Base surfaces */
+	--color-bg: var(--color-white);
+	--color-surface: var(--color-gray-50);
+	--color-surface-2: var(--color-gray-100);
+	--color-border: var(--color-gray-200);
+	--color-text: var(--color-gray-900);
+	--color-text-soft: var(--color-gray-600);
+	--color-muted: var(--color-gray-500);
+	--color-focus: var(--color-secondary-500);
+
+	/* Typography */
+	--font-sans:
+		'Poppins', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Inter, 'Helvetica Neue',
+		Arial, 'Noto Sans', 'Liberation Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+	--font-mono:
+		ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+		monospace;
+
+	--font-size-xs: 0.75rem;
+	--font-size-sm: 0.875rem;
+	--font-size-md: 1rem;
+	--font-size-lg: 1.125rem;
+	--font-size-xl: 1.25rem;
+	--font-size-2xl: 1.5rem;
+	--font-size-3xl: 1.875rem;
+
+	--line-height-tight: 1.2;
+	--line-height-normal: 1.5;
+	--line-height-loose: 1.7;
+
+	/* Spacing scale */
+	--space-0: 0;
+	--space-1: 0.25rem;
+	--space-2: 0.5rem;
+	--space-3: 0.75rem;
+	--space-4: 1rem;
+	--space-5: 1.25rem;
+	--space-6: 1.5rem;
+	--space-8: 2rem;
+	--space-10: 2.5rem;
+	--space-12: 3rem;
+	--space-16: 4rem;
+
+	/* Radii */
+	--radius-sm: 6px;
+	--radius-md: 10px;
+	--radius-lg: 16px;
+	--radius-full: 9999px;
+
+	/* Shadows */
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+	--shadow-md: 0 3px 8px rgba(0, 0, 0, 0.08);
+	--shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+	--shadow-focus: 0 0 0 3px rgba(59, 137, 209, 0.35); /* info color ring */
+
+	/* Z-index */
+	--z-dropdown: 1000;
+	--z-sticky: 1020;
+	--z-fixed: 1030;
+	--z-modal-backdrop: 1040;
+	--z-modal: 1050;
+	--z-popover: 1060;
+	--z-tooltip: 1070;
+
+	/* Transitions */
+	--transition-fast: 120ms ease;
+	--transition-base: 200ms ease;
+	--transition-slow: 320ms ease;
+
+	/* Component tokens */
+	--btn-height: 2.5rem;
+	--input-height: 2.75rem;
+	--control-padding-x: var(--space-4);
+	--control-padding-y: var(--space-2);
+
+	/* Table tokens */
+	--table-row-hover: var(--color-gray-100);
+	--table-header-bg: var(--color-gray-50);
+
+	/* Calendar tokens */
+	--calendar-day-bg: var(--color-surface);
+	--calendar-day-border: var(--color-border);
+	--calendar-day-text: var(--color-text);
+	--calendar-day-normal: var(--color-brand-100);
+	--calendar-day-extra: var(--color-accent-100);
+	--calendar-day-none: var(--color-gray-100);
+}
+
+/* Dark theme using data attribute */
+[data-theme='dark'] {
+	--color-bg: var(--color-gray-900);
+	--color-surface: var(--color-gray-800);
+	--color-surface-2: var(--color-gray-700);
+	--color-border: var(--color-gray-700);
+	--color-text: var(--color-gray-50);
+	--color-text-soft: var(--color-gray-300);
+	--color-muted: var(--color-gray-400);
+	--color-focus: var(--color-secondary-400);
+
+	--table-row-hover: rgba(255, 255, 255, 0.04);
+	--table-header-bg: rgba(255, 255, 255, 0.03);
+
+	--calendar-day-bg: var(--color-surface);
+	--calendar-day-border: var(--color-border);
+	--calendar-day-text: var(--color-text);
+	--calendar-day-normal: rgba(58, 163, 117, 0.2);
+	--calendar-day-extra: rgba(255, 144, 6, 0.2);
+	--calendar-day-none: rgba(255, 255, 255, 0.06);
+
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+	--shadow-md: 0 3px 8px rgba(0, 0, 0, 0.45);
+	--shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.55);
+	--shadow-focus: 0 0 0 3px rgba(104, 163, 219, 0.35);
+}
+
+/* Base resets tailored for the design system */
+html {
+	box-sizing: border-box;
+	font-family: var(--font-sans);
+	font-size: 16px;
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: inherit;
+}
+
+body {
+	margin: 0;
+	color: var(--color-text);
+	background: var(--color-bg);
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+img,
+svg,
+video,
+canvas,
+audio,
+iframe {
+	display: block;
+	max-width: 100%;
+}
+
+button {
+	font-family: inherit;
+	font-size: var(--font-size-md);
+	line-height: var(--line-height-normal);
+	cursor: pointer;
+}
+
+input,
+select,
+textarea {
+	font-family: inherit;
+	font-size: var(--font-size-md);
+	line-height: var(--line-height-normal);
+	color: var(--color-text);
+}
+
+/* Focus visible for accessibility */
+:where(button, a, input, select, textarea, [role='button']) {
+	outline: none;
+}
+
+:where(button, a, input, select, textarea, [role='button']):focus-visible {
+	box-shadow: var(--shadow-focus);
+	border-radius: var(--radius-sm);
+}
+
+/* Utility classes leveraging tokens */
+
+/* Text utilities */
+.text-soft {
+	color: var(--color-text-soft);
+}
+.text-muted {
+	color: var(--color-muted);
+}
+.text-success {
+	color: var(--color-success);
+}
+.text-warning {
+	color: var(--color-warning);
+}
+.text-error {
+	color: var(--color-error);
+}
+.text-info {
+	color: var(--color-info);
+}
+
+/* Background utilities */
+.bg-surface {
+	background: var(--color-surface);
+}
+.bg-surface-2 {
+	background: var(--color-surface-2);
+}
+.bg-brand {
+	background: var(--color-brand-500);
+	color: var(--color-white);
+}
+.bg-accent {
+	background: var(--color-accent-500);
+	color: var(--color-black);
+}
+
+/* Border utilities */
+.border {
+	border: 1px solid var(--color-border);
+}
+.rounded-sm {
+	border-radius: var(--radius-sm);
+}
+.rounded-md {
+	border-radius: var(--radius-md);
+}
+.rounded-lg {
+	border-radius: var(--radius-lg);
+}
+.rounded-full {
+	border-radius: var(--radius-full);
+}
+
+/* Spacing shortcuts */
+.px-4 {
+	padding-left: var(--space-4);
+	padding-right: var(--space-4);
+}
+.py-2 {
+	padding-top: var(--space-2);
+	padding-bottom: var(--space-2);
+}
+.p-4 {
+	padding: var(--space-4);
+}
+.m-0 {
+	margin: 0;
+}
+.mt-4 {
+	margin-top: var(--space-4);
+}
+.mb-4 {
+	margin-bottom: var(--space-4);
+}
+
+/* Shadow utilities */
+.shadow-sm {
+	box-shadow: var(--shadow-sm);
+}
+.shadow-md {
+	box-shadow: var(--shadow-md);
+}
+.shadow-lg {
+	box-shadow: var(--shadow-lg);
+}
+
+/* Button base (can be extended in component styles) */
+.btn {
+	height: var(--btn-height);
+	padding: 0 var(--control-padding-x);
+	border-radius: var(--radius-sm);
+	border: 1px solid transparent;
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-2);
+	font-weight: 600;
+	transition:
+		background-color var(--transition-base),
+		color var(--transition-base),
+		box-shadow var(--transition-fast);
+}
+
+.btn-primary {
+	background: var(--color-brand-500);
+	color: var(--color-white);
+}
+
+.btn-primary:hover {
+	background: var(--color-brand-600);
+}
+
+.btn-secondary {
+	background: var(--color-secondary-500);
+	color: var(--color-white);
+}
+
+.btn-secondary:hover {
+	background: var(--color-secondary-600);
+}
+
+.btn-outline {
+	background: transparent;
+	border-color: var(--color-border);
+	color: var(--color-text);
+}
+
+.btn-outline:hover {
+	border-color: var(--color-brand-400);
+}
+
+/* Input base */
+.input {
+	height: var(--input-height);
+	padding: var(--control-padding-y) var(--control-padding-x);
+	border-radius: var(--radius-sm);
+	border: 1px solid var(--color-border);
+	background: var(--color-white);
+	color: var(--color-text);
+	transition:
+		border-color var(--transition-fast),
+		box-shadow var(--transition-fast),
+		background-color var(--transition-fast);
+}
+
+.input::placeholder {
+	color: var(--color-muted);
+}
+
+.input:hover {
+	border-color: var(--color-gray-300);
+}
+
+.input:focus {
+	border-color: var(--color-focus);
+	box-shadow: var(--shadow-focus);
+}
+
+/* Card base for panels */
+.card {
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
+	box-shadow: var(--shadow-sm);
+	padding: var(--space-4);
+}
+
+/* Badge base (status chips) */
+.badge {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-2);
+	border-radius: var(--radius-full);
+	padding: 0 var(--space-3);
+	height: 1.75rem;
+	font-size: var(--font-size-sm);
+	font-weight: 600;
+	border: 1px solid transparent;
+}
+
+.badge-success {
+	background: var(--color-brand-100);
+	color: var(--color-brand-700);
+	border-color: var(--color-brand-200);
+}
+.badge-warning {
+	background: var(--color-accent-100);
+	color: var(--color-accent-700);
+	border-color: var(--color-accent-200);
+}
+.badge-info {
+	background: #e6f0fb;
+	color: var(--color-secondary-700);
+	border-color: var(--color-secondary-200);
+}
+.badge-error {
+	background: #fde7e7;
+	color: #9b2c2c;
+	border-color: #f6bcbc;
+}
+
+/* Table base */
+.table {
+	width: 100%;
+	border-collapse: collapse;
+}
+
+.table th {
+	text-align: left;
+	background: var(--table-header-bg);
+	color: var(--color-text-soft);
+	font-weight: 600;
+	padding: var(--space-3) var(--space-4);
+	border-bottom: 1px solid var(--color-border);
+}
+
+.table td {
+	padding: var(--space-3) var(--space-4);
+	border-bottom: 1px solid var(--color-border);
+}
+
+.table tr:hover td {
+	background: var(--table-row-hover);
+}
+
+/* Calendar day styles (generic) */
+.calendar-grid {
+	display: grid;
+	grid-template-columns: repeat(7, 1fr);
+	gap: var(--space-2);
+}
+
+.calendar-day {
+	background: var(--calendar-day-bg);
+	border: 1px solid var(--calendar-day-border);
+	color: var(--calendar-day-text);
+	border-radius: var(--radius-sm);
+	min-height: 70px;
+	padding: var(--space-2);
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+}
+
+.calendar-day.normal {
+	background: var(--calendar-day-normal);
+}
+.calendar-day.extra {
+	background: var(--calendar-day-extra);
+}
+.calendar-day.none {
+	background: var(--calendar-day-none);
+}
