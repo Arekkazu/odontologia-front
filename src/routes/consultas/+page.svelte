@@ -1,15 +1,7 @@
 <script lang="ts">
 	import { Card, Button, Input, Badge } from '$lib/ui';
 	import { onMount } from 'svelte';
-	import { seedMockData } from '$lib/services/api/pacientes';
-	import {
-		listConsultas,
-		searchConsultas,
-		getEstadisticasConsultas,
-		getUltimasConsultas,
-		seedConsultasMock,
-		type ConsultaConDetalles
-	} from '$lib/services/api/consultas';
+	import { listConsultas, searchConsultas, type Consulta } from '$lib/services/api/consultas';
 
 	// Estado de búsqueda y filtros
 	let searchQuery = '';
@@ -18,22 +10,24 @@
 	let filtroHasta = '';
 
 	// Datos
-	let todasConsultas: ConsultaConDetalles[] = [];
-	let ultimasConsultas: ConsultaConDetalles[] = [];
+	let todasConsultas: Consulta[] = [];
+	let filteredConsultas: Consulta[] = [];
+	let ultimasConsultas: Consulta[] = [];
 	let estadisticas = {
 		total: 0,
 		hoy: 0,
-		estaSemana: 0,
-		ultimasRecientes: [] as ConsultaConDetalles[]
+		estaSemana: 0
 	};
 
 	// Estados derivados
-	$: filteredConsultas = searchConsultas({
-		searchText: searchQuery,
-		desde: filtroDesde,
-		hasta: filtroHasta,
-		ordenar: filtroOrden
-	});
+	$: (async () => {
+		filteredConsultas = await searchConsultas({
+			searchText: searchQuery,
+			desde: filtroDesde,
+			hasta: filtroHasta,
+			ordenar: filtroOrden
+		});
+	})();
 
 	// Acciones
 	function nuevaConsulta() {
@@ -66,15 +60,30 @@
 	}
 
 	// Cargar datos al montar el componente
-	onMount(() => {
-		// Inicializar datos mock si es necesario
-		seedMockData();
-		seedConsultasMock();
+	onMount(async () => {
+		const all = await listConsultas();
+		todasConsultas = all;
 
-		// Cargar estadísticas y consultas
-		estadisticas = getEstadisticasConsultas();
-		todasConsultas = listConsultas();
-		ultimasConsultas = getUltimasConsultas(5);
+		const now = new Date();
+		const todayStr = now.toDateString();
+		const weekMs = 7 * 24 * 60 * 60 * 1000;
+
+		const hoy = all.filter(
+			(c) => new Date(c.fecha_consulta ?? '').toDateString() === todayStr
+		).length;
+		const estaSemana = all.filter((c) => {
+			const t = new Date(c.fecha_consulta ?? '').getTime();
+			return !Number.isNaN(t) && now.getTime() - t < weekMs;
+		}).length;
+
+		estadisticas = { total: all.length, hoy, estaSemana };
+
+		ultimasConsultas = [...all]
+			.sort(
+				(a, b) =>
+					new Date(b.fecha_consulta ?? '').getTime() - new Date(a.fecha_consulta ?? '').getTime()
+			)
+			.slice(0, 5);
 	});
 </script>
 
@@ -103,11 +112,9 @@
 			<p class="stat-label">últimos 7 días</p>
 		</Card>
 
-		<Card title="Saldos pendientes" hoverable>
-			<div class="stat-value">{formatMoney(
-				estadisticas.ultimasRecientes.reduce((sum, c) => sum + c.saldo_pendiente, 0)
-			)}</div>
-			<p class="stat-label">por cobrar</p>
+		<Card title="Últimas registradas" hoverable>
+			<div class="stat-value">{ultimasConsultas.length}</div>
+			<p class="stat-label">en los últimos registros</p>
 		</Card>
 	</div>
 
@@ -141,25 +148,27 @@
 					<input type="date" bind:value={filtroHasta} class="input" />
 				</label>
 
-				<Button variant="outline" size="sm" on:click={limpiarFiltros}> Limpiar filtros </Button>
+				<Button variant="outline" size="sm" on:click={limpiarFiltros}>Limpiar filtros</Button>
 			</div>
 		</div>
 	</Card>
 
 	<!-- Últimas consultas (resumen rápido) -->
 	{#if ultimasConsultas.length > 0}
-		<Card title="Últimas consultas" subtitle={`${ultimasConsultas.length} consultas recientes`} hoverable>
+		<Card
+			title="Últimas consultas"
+			subtitle={`${ultimasConsultas.length} consultas recientes`}
+			hoverable
+		>
 			<div class="tabla-wrapper">
 				<table class="table">
 					<thead>
 						<tr>
 							<th style="width: 90px;">ID</th>
-							<th>Paciente</th>
+							<th>Paciente ID</th>
 							<th>Motivo</th>
-							<th style="width: 140px;">Fecha</th>
-							<th style="width: 100px;">Trat.</th>
-							<th style="width: 120px;">Costo</th>
-							<th style="width: 120px;">Saldo</th>
+							<th>Diagnóstico</th>
+							<th style="width: 160px;">Fecha</th>
 							<th style="width: 140px;">Acciones</th>
 						</tr>
 					</thead>
@@ -167,26 +176,22 @@
 						{#each ultimasConsultas as c}
 							<tr>
 								<td>#{c.id}</td>
-								<td>
-									<div class="col-main">
-										<div class="name">{c.paciente_nombre}</div>
-									</div>
-								</td>
-								<td>{c.motivo || c.observaciones || '—'}</td>
-								<td class="text-soft">{c.fecha_formato}</td>
-								<td class="text-center">{c.tratamientos_count}</td>
-								<td>{formatMoney(c.costo_total_tratamientos)}</td>
-								<td>
-									<Badge variant={c.saldo_pendiente > 0 ? 'warning' : 'success'}>
-										{formatMoney(c.saldo_pendiente)}
-									</Badge>
+								<td>{c.paciente_id}</td>
+								<td>{c.motivo || '—'}</td>
+								<td>{c.diagnostico || '—'}</td>
+								<td class="text-soft">
+									{c.fecha_consulta ? new Date(c.fecha_consulta).toLocaleString() : '—'}
 								</td>
 								<td>
 									<div class="row-actions">
 										<Button variant="secondary" size="sm" on:click={() => verConsulta(c.id)}>
 											Ver
 										</Button>
-										<Button variant="outline" size="sm" on:click={() => irAlPaciente(c.paciente_id)}>
+										<Button
+											variant="outline"
+											size="sm"
+											on:click={() => irAlPaciente(c.paciente_id)}
+										>
 											Paciente
 										</Button>
 									</div>
@@ -210,12 +215,10 @@
 				<thead>
 					<tr>
 						<th style="width: 90px;">ID</th>
-						<th>Paciente</th>
+						<th>Paciente ID</th>
 						<th>Motivo</th>
-						<th style="width: 140px;">Fecha</th>
-						<th style="width: 100px;">Trat.</th>
-						<th style="width: 120px;">Costo</th>
-						<th style="width: 120px;">Saldo</th>
+						<th>Diagnóstico</th>
+						<th style="width: 160px;">Fecha</th>
 						<th style="width: 180px;">Acciones</th>
 					</tr>
 				</thead>
@@ -228,26 +231,22 @@
 						{#each filteredConsultas as c}
 							<tr>
 								<td>#{c.id}</td>
-								<td>
-									<div class="col-main">
-										<div class="name">{c.paciente_nombre}</div>
-									</div>
-								</td>
-								<td>{c.motivo || c.observaciones || '—'}</td>
-								<td class="text-soft">{c.fecha_formato}</td>
-								<td class="text-center">{c.tratamientos_count}</td>
-								<td>{formatMoney(c.costo_total_tratamientos)}</td>
-								<td>
-									<Badge variant={c.saldo_pendiente > 0 ? 'warning' : 'success'}>
-										{formatMoney(c.saldo_pendiente)}
-									</Badge>
+								<td>{c.paciente_id}</td>
+								<td>{c.motivo || '—'}</td>
+								<td>{c.diagnostico || '—'}</td>
+								<td class="text-soft">
+									{c.fecha_consulta ? new Date(c.fecha_consulta).toLocaleString() : '—'}
 								</td>
 								<td>
 									<div class="row-actions">
 										<Button variant="secondary" size="sm" on:click={() => verConsulta(c.id)}>
 											Ver
 										</Button>
-										<Button variant="outline" size="sm" on:click={() => irAlPaciente(c.paciente_id)}>
+										<Button
+											variant="outline"
+											size="sm"
+											on:click={() => irAlPaciente(c.paciente_id)}
+										>
 											Paciente
 										</Button>
 									</div>

@@ -3,14 +3,26 @@
 	import './layout.css';
 	import '$lib/ui/theme.css';
 	import favicon from '$lib/assets/favicon.svg';
+	import { resolve } from '$app/paths';
+	import { logout } from '$lib/services/api/auth';
 
-	let { children } = $props();
+	const { children, data } = $props();
+	const isAuthRoute = $derived(data?.isAuthRoute ?? false);
 
-	// Simple theme toggle (optional: can be wired later to settings)
-	let theme: 'light' | 'dark' = 'light';
-	function toggleTheme() {
+	let theme = $state<'light' | 'dark'>('light');
+	const toggleTheme = () => {
 		theme = theme === 'light' ? 'dark' : 'light';
-	}
+	};
+
+	const handleLogout = async () => {
+		try {
+			await logout();
+		} catch (err) {
+			console.error('No se pudo cerrar sesión', err);
+		} finally {
+			window.location.href = '/auth';
+		}
+	};
 </script>
 
 <svelte:head>
@@ -20,37 +32,42 @@
 </svelte:head>
 
 <div class="app-shell" data-theme={theme === 'dark' ? 'dark' : undefined}>
-	<header class="app-header">
-		<div class="header-inner">
-			<a class="brand" href="/dashboard">
-				<span class="brand-mark" aria-hidden="true">🦷</span>
-				<span class="brand-name">Odonto Gestión</span>
-			</a>
-			<nav class="nav">
-				<a class="nav-link" href="/dashboard">Dashboard</a>
-				<a class="nav-link" href="/pacientes">Pacientes</a>
-				<a class="nav-link" href="/consultas">Consultas</a>
-				<a class="nav-link" href="/laboratorios">Laboratorios</a>
-				<a class="nav-link" href="/horario">Horario</a>
-			</nav>
-			<div class="header-actions">
-				<button class="btn btn-outline" on:click={toggleTheme} aria-label="Cambiar tema">
-					{theme === 'light' ? 'Modo oscuro' : 'Modo claro'}
-				</button>
+	{#if !isAuthRoute}
+		<header class="app-header">
+			<div class="header-inner">
+				<a class="brand" href={resolve('/dashboard')}>
+					<span class="brand-mark" aria-hidden="true">🦷</span>
+					<span class="brand-name">Odonto Gestión</span>
+				</a>
+				<nav class="nav">
+					<a class="nav-link" href={resolve('/dashboard')}>Dashboard</a>
+					<a class="nav-link" href={resolve('/pacientes')}>Pacientes</a>
+					<a class="nav-link" href={resolve('/consultas')}>Consultas</a>
+					<a class="nav-link" href={resolve('/laboratorios')}>Laboratorios</a>
+					<a class="nav-link" href={resolve('/horario')}>Horario</a>
+				</nav>
+				<div class="header-actions">
+					<button class="btn btn-outline" onclick={toggleTheme} aria-label="Cambiar tema">
+						{theme === 'light' ? 'Modo oscuro' : 'Modo claro'}
+					</button>
+					<button class="btn btn-primary" onclick={handleLogout}>Cerrar sesión</button>
+				</div>
 			</div>
-		</div>
-	</header>
+		</header>
+	{/if}
 
 	<main class="app-main">
 		{@render children()}
 	</main>
 
-	<footer class="app-footer text-soft">
-		<div class="footer-inner">
-			<span>© {new Date().getFullYear()} Odonto Gestión</span>
-			<span>Diseño clínico • Rápido • Responsable</span>
-		</div>
-	</footer>
+	{#if !isAuthRoute}
+		<footer class="app-footer text-soft">
+			<div class="footer-inner">
+				<span>© {new Date().getFullYear()} Odonto Gestión</span>
+				<span>Diseño clínico • Rápido • Responsable</span>
+			</div>
+		</footer>
+	{/if}
 </div>
 
 <style>

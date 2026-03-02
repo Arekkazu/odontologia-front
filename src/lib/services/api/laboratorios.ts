@@ -1,32 +1,25 @@
-import type { StorageNamespace } from '$lib/services/storage';
-import {
-	loadCollection,
-	saveCollection,
-	upsertInCollection,
-	removeFromCollection,
-	generateSeqId
-} from '$lib/services/storage';
-
 /**
- * Mock services for Laboratorios and Trabajos de Laboratorio
- * Aligned with DB schema shared by the user.
+ * Servicio para Laboratorios y Trabajos de Laboratorio conectado al backend.
+ * Endpoints según infobackend.md:
+ * - Laboratorios:
+ *   - POST   /api/laboratorios
+ *   - GET    /api/laboratorios
+ *   - GET    /api/laboratorios/:id
+ *   - PUT    /api/laboratorios/:id
+ *   - DELETE /api/laboratorios/:id
+ * - Trabajos de laboratorio:
+ *   - POST   /api/trabajos-laboratorio
+ *   - GET    /api/trabajos-laboratorio
+ *   - GET    /api/trabajos-laboratorio/:id
+ *   - PATCH  /api/trabajos-laboratorio/:id
  *
- * Tables (reference):
- * - laboratorios (id, nombre, direccion, telefono, email, activo, tiempo_estimado_dias)
- * - trabajos_laboratorio (id, tratamiento_id, laboratorio_id, descripcion_trabajo, estado,
- *   fecha_solicitud, fecha_envio, fecha_estimada_entrega, fecha_recepcion, fecha_entrega_paciente,
- *   costo_laboratorio)
- *
- * This module provides:
- * - Types aligned to the schema
- * - CRUD operations for laboratorios
- * - CRUD and workflow operations for trabajos de laboratorio
- * - Filters and seed data for development
+ * Todas las llamadas usan cookies de sesión vía apiClient (credentials: "include").
  */
+import { apiClient } from './http';
 
-/* -------------------------------------------
- * Types aligned to schema
- * ------------------------------------------- */
+/* -------------------------------------------------------------------------- */
+/*                                   Tipos                                    */
+/* -------------------------------------------------------------------------- */
 
 export interface Laboratorio {
 	id: number;
@@ -34,78 +27,9 @@ export interface Laboratorio {
 	direccion?: string | null;
 	telefono?: string | null;
 	email?: string | null;
-	activo?: boolean | null; // default true
+	activo?: boolean | null;
 	tiempo_estimado_dias?: number | null;
 }
-
-export type EstadoTrabajoLaboratorio =
-	| 'CREADO'
-	| 'ENVIADO'
-	| 'EN_PROCESO'
-	| 'LISTO'
-	| 'RECIBIDO'
-	| 'ENTREGADO'
-	| 'CANCELADO'
-	| 'REHACER';
-
-export interface TrabajoLaboratorio {
-	id: number;
-	tratamiento_id: number;
-	laboratorio_id: number;
-	descripcion_trabajo?: string | null;
-	estado: EstadoTrabajoLaboratorio;
-	fecha_solicitud: string; // YYYY-MM-DD (default CURRENT_DATE)
-	fecha_envio?: string | null; // YYYY-MM-DD
-	fecha_estimada_entrega?: string | null; // YYYY-MM-DD
-	fecha_recepcion?: string | null; // YYYY-MM-DD
-	fecha_entrega_paciente?: string | null; // YYYY-MM-DD
-	costo_laboratorio?: number | null; // numeric(10, 2)
-}
-
-/* -------------------------------------------
- * Storage namespaces and keys
- * ------------------------------------------- */
-
-const NS_LABORATORIOS: StorageNamespace = 'laboratorios';
-const NS_TRABAJOS: StorageNamespace = 'trabajos_laboratorio';
-
-const KEY_LABORATORIOS = 'collection';
-const KEY_TRABAJOS = 'collection';
-
-/* -------------------------------------------
- * Utils
- * ------------------------------------------- */
-
-function toMoney(n: number | null | undefined): number | null {
-	if (n === null || n === undefined) return null;
-	return Math.round(n * 100) / 100;
-}
-
-function todayIsoDate(): string {
-	const d = new Date();
-	// Normalize to local date string YYYY-MM-DD
-	return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().substring(0, 10);
-}
-
-function assertEstado(estado: string): asserts estado is EstadoTrabajoLaboratorio {
-	const allowed: EstadoTrabajoLaboratorio[] = [
-		'CREADO',
-		'ENVIADO',
-		'EN_PROCESO',
-		'LISTO',
-		'RECIBIDO',
-		'ENTREGADO',
-		'CANCELADO',
-		'REHACER'
-	];
-	if (!allowed.includes(estado as EstadoTrabajoLaboratorio)) {
-		throw new Error(`Estado no válido: ${estado}`);
-	}
-}
-
-/* -------------------------------------------
- * Laboratorios - CRUD
- * ------------------------------------------- */
 
 export interface CreateLaboratorioInput {
 	nombre: string;
@@ -117,7 +41,6 @@ export interface CreateLaboratorioInput {
 }
 
 export interface UpdateLaboratorioInput {
-	id: number;
 	nombre?: string;
 	direccion?: string | null;
 	telefono?: string | null;
@@ -126,348 +49,279 @@ export interface UpdateLaboratorioInput {
 	tiempo_estimado_dias?: number | null;
 }
 
-export function listLaboratorios(): Laboratorio[] {
-	return loadCollection<Laboratorio>(NS_LABORATORIOS, KEY_LABORATORIOS).sort((a, b) =>
-		a.nombre.localeCompare(b.nombre)
-	);
-}
+/**
+ * Estados conocidos para trabajos de laboratorio.
+ * Se amplía para cubrir variantes usadas en la UI y en el backend.
+ */
+export type TrabajoEstado =
+	| 'SOLICITADO'
+	| 'ENVIADO'
+	| 'RECIBIDO'
+	| 'ENTREGADO'
+	| 'CREADO'
+	| 'EN_PROCESO'
+	| 'LISTO'
+	| 'CANCELADO'
+	| 'REHACER';
 
-export function getLaboratorioById(id: number): Laboratorio | null {
-	const items = loadCollection<Laboratorio>(NS_LABORATORIOS, KEY_LABORATORIOS);
-	return items.find((l) => l.id === id) || null;
-}
-
-export function createLaboratorio(input: CreateLaboratorioInput): Laboratorio {
-	const id = generateSeqId(NS_LABORATORIOS);
-	const item: Laboratorio = {
-		id,
-		nombre: input.nombre.trim(),
-		direccion: input.direccion ?? null,
-		telefono: input.telefono ?? null,
-		email: input.email ?? null,
-		activo: input.activo ?? true,
-		tiempo_estimado_dias: input.tiempo_estimado_dias ?? null
-	};
-	const col = upsertInCollection<Laboratorio>(NS_LABORATORIOS, KEY_LABORATORIOS, item, () => id);
-	return col.find((l) => l.id === id)!;
-}
-
-export function updateLaboratorio(input: UpdateLaboratorioInput): Laboratorio {
-	const current = getLaboratorioById(input.id);
-	if (!current) throw new Error(`Laboratorio ${input.id} no encontrado`);
-	const next: Laboratorio = {
-		...current,
-		...(input.nombre !== undefined && { nombre: input.nombre.trim() }),
-		...(input.direccion !== undefined && { direccion: input.direccion }),
-		...(input.telefono !== undefined && { telefono: input.telefono }),
-		...(input.email !== undefined && { email: input.email }),
-		...(input.activo !== undefined && { activo: input.activo }),
-		...(input.tiempo_estimado_dias !== undefined && {
-			tiempo_estimado_dias: input.tiempo_estimado_dias
-		})
-	};
-	const col = upsertInCollection<Laboratorio>(
-		NS_LABORATORIOS,
-		KEY_LABORATORIOS,
-		next,
-		() => next.id
-	);
-	const saved = col.find((l) => l.id === next.id);
-	if (!saved) throw new Error('Error guardando laboratorio');
-	return saved;
-}
-
-export function deleteLaboratorio(id: number): void {
-	removeFromCollection<Laboratorio>(NS_LABORATORIOS, KEY_LABORATORIOS, id);
-}
-
-/* -------------------------------------------
- * Trabajos de Laboratorio - CRUD y flujo
- * ------------------------------------------- */
-
-export interface CreateTrabajoInput {
-	tratamiento_id: number;
+export interface TrabajoLaboratorio {
+	id: number;
 	laboratorio_id: number;
-	descripcion_trabajo?: string | null;
-	estado?: EstadoTrabajoLaboratorio; // default 'CREADO'
-	fecha_solicitud?: string; // default today
-	fecha_envio?: string | null;
-	fecha_estimada_entrega?: string | null;
+	consulta_id?: number | null;
+	descripcion?: string | null;
+	estado: TrabajoEstado;
+	fecha_solicitud?: string | null; // YYYY-MM-DD
+	fecha_recepcion?: string | null; // YYYY-MM-DD
+	fecha_entrega_paciente?: string | null; // YYYY-MM-DD
+}
+
+/**
+ * Input legacy / internal used in some helpers. Dates as YYYY-MM-DD strings.
+ */
+export interface CreateTrabajoInput {
+	laboratorio_id: number;
+	consulta_id?: number | null;
+	descripcion?: string | null;
+	estado: TrabajoEstado;
 	fecha_recepcion?: string | null;
 	fecha_entrega_paciente?: string | null;
-	costo_laboratorio?: number | null;
 }
 
 export interface UpdateTrabajoInput {
-	id: number;
-	tratamiento_id?: number;
 	laboratorio_id?: number;
-	descripcion_trabajo?: string | null;
-	estado?: EstadoTrabajoLaboratorio;
-	fecha_solicitud?: string;
-	fecha_envio?: string | null;
-	fecha_estimada_entrega?: string | null;
+	consulta_id?: number | null;
+	descripcion?: string | null;
+	estado?: TrabajoEstado;
 	fecha_recepcion?: string | null;
 	fecha_entrega_paciente?: string | null;
-	costo_laboratorio?: number | null;
 }
 
-export function listTrabajos(): TrabajoLaboratorio[] {
-	return loadCollection<TrabajoLaboratorio>(NS_TRABAJOS, KEY_TRABAJOS).sort((a, b) => {
-		// Order by latest fecha_solicitud desc, then by estado priority
-		const da = new Date(a.fecha_solicitud).getTime();
-		const db = new Date(b.fecha_solicitud).getTime();
-		if (db !== da) return db - da;
-		const prio = (e: EstadoTrabajoLaboratorio) =>
-			e === 'LISTO'
-				? 5
-				: e === 'RECIBIDO'
-					? 4
-					: e === 'EN_PROCESO'
-						? 3
-						: e === 'ENVIADO'
-							? 2
-							: e === 'CREADO'
-								? 1
-								: 0;
-		return prio(b.estado) - prio(a.estado);
-	});
+/**
+ * DTO esperado por el front-end para crear un Trabajo de Laboratorio.
+ * (Tal como lo proporcionaste)
+ */
+export interface TrabajoLaboratorioCreateDto {
+	laboratorio_id: number;
+	consulta_id?: number;
+	descripcion?: string;
+	estado: TrabajoEstado;
+	fecha_recepcion?: Date;
+	fecha_entrega_paciente?: Date;
 }
 
-export function getTrabajoById(id: number): TrabajoLaboratorio | null {
-	const items = loadCollection<TrabajoLaboratorio>(NS_TRABAJOS, KEY_TRABAJOS);
-	return items.find((t) => t.id === id) || null;
-}
+/* -------------------------------------------------------------------------- */
+/*                               Utilidades                                   */
+/* -------------------------------------------------------------------------- */
 
-export function listTrabajosPendientes(): TrabajoLaboratorio[] {
-	// Pendientes de recoger: estados distintos a ENTREGADO/CANCELADO
-	return listTrabajos().filter((t) => !['ENTREGADO', 'CANCELADO'].includes(t.estado));
-}
+function ensureArray<T>(val: unknown): T[] {
+	if (Array.isArray(val)) return val as T[];
 
-export function createTrabajo(input: CreateTrabajoInput): TrabajoLaboratorio {
-	const id = generateSeqId(NS_TRABAJOS);
-	const estado = input.estado ?? 'CREADO';
-	assertEstado(estado);
-
-	// Validate laboratorio exists (optional in mock)
-	const lab = getLaboratorioById(input.laboratorio_id);
-	if (!lab) {
-		throw new Error(`Laboratorio ${input.laboratorio_id} no existe`);
+	if (typeof val === 'object' && val !== null) {
+		const wrapped = val as Record<string, unknown>;
+		if (Array.isArray(wrapped.data)) return wrapped.data as T[];
+		for (const entry of Object.values(wrapped)) {
+			if (Array.isArray(entry)) return entry as T[];
+		}
 	}
 
-	const item: TrabajoLaboratorio = {
-		id,
-		tratamiento_id: input.tratamiento_id,
-		laboratorio_id: input.laboratorio_id,
-		descripcion_trabajo: input.descripcion_trabajo ?? null,
-		estado,
-		fecha_solicitud: input.fecha_solicitud ?? todayIsoDate(),
-		fecha_envio: input.fecha_envio ?? null,
-		fecha_estimada_entrega: input.fecha_estimada_entrega ?? null,
-		fecha_recepcion: input.fecha_recepcion ?? null,
-		fecha_entrega_paciente: input.fecha_entrega_paciente ?? null,
-		costo_laboratorio: toMoney(input.costo_laboratorio ?? null)
-	};
-
-	upsertInCollection<TrabajoLaboratorio>(NS_TRABAJOS, KEY_TRABAJOS, item, () => id);
-	return item;
+	return [];
 }
 
-export function updateTrabajo(input: UpdateTrabajoInput): TrabajoLaboratorio {
-	const current = getTrabajoById(input.id);
-	if (!current) throw new Error(`Trabajo ${input.id} no encontrado`);
-
-	if (input.estado !== undefined) assertEstado(input.estado);
-
-	const next: TrabajoLaboratorio = {
-		...current,
-		...(input.tratamiento_id !== undefined && { tratamiento_id: input.tratamiento_id }),
-		...(input.laboratorio_id !== undefined && { laboratorio_id: input.laboratorio_id }),
-		...(input.descripcion_trabajo !== undefined && {
-			descripcion_trabajo: input.descripcion_trabajo
-		}),
-		...(input.estado !== undefined && { estado: input.estado }),
-		...(input.fecha_solicitud !== undefined && { fecha_solicitud: input.fecha_solicitud }),
-		...(input.fecha_envio !== undefined && { fecha_envio: input.fecha_envio }),
-		...(input.fecha_estimada_entrega !== undefined && {
-			fecha_estimada_entrega: input.fecha_estimada_entrega
-		}),
-		...(input.fecha_recepcion !== undefined && { fecha_recepcion: input.fecha_recepcion }),
-		...(input.fecha_entrega_paciente !== undefined && {
-			fecha_entrega_paciente: input.fecha_entrega_paciente
-		}),
-		...(input.costo_laboratorio !== undefined && {
-			costo_laboratorio: toMoney(input.costo_laboratorio)
-		})
-	};
-
-	upsertInCollection<TrabajoLaboratorio>(NS_TRABAJOS, KEY_TRABAJOS, next, () => next.id);
-	const saved = getTrabajoById(next.id);
-	if (!saved) throw new Error('Error guardando trabajo de laboratorio');
-	return saved;
+/**
+ * Unwraps API responses that come in the format: {ok, message, data: T}
+ * Returns the inner data field if present, otherwise returns the value as-is.
+ */
+function unwrapPayload<T>(value: unknown): T {
+	if (typeof value === 'object' && value !== null && 'data' in (value as Record<string, unknown>)) {
+		return (value as Record<string, unknown>).data as T;
+	}
+	return value as T;
 }
 
-export function deleteTrabajo(id: number): void {
-	removeFromCollection<TrabajoLaboratorio>(NS_TRABAJOS, KEY_TRABAJOS, id);
+function errorFromResponse(resp: { data: unknown; status: number }, fallback: string): Error {
+	if (typeof resp.data === 'object' && resp.data !== null && 'message' in (resp.data as any)) {
+		return new Error(String((resp.data as any).message));
+	}
+	return new Error(`${fallback} (status ${resp.status})`);
 }
 
-/* -------------------------------------------
- * Workflow helpers
- * ------------------------------------------- */
-
-export function marcarEnviado(id: number, fechaEnvio?: string): TrabajoLaboratorio {
-	const now = fechaEnvio ?? todayIsoDate();
-	return updateTrabajo({ id, estado: 'ENVIADO', fecha_envio: now });
-}
-
-export function marcarEnProceso(id: number): TrabajoLaboratorio {
-	return updateTrabajo({ id, estado: 'EN_PROCESO' });
-}
-
-export function marcarListo(id: number, fechaEstimadaEntrega?: string): TrabajoLaboratorio {
-	return updateTrabajo({
-		id,
-		estado: 'LISTO',
-		fecha_estimada_entrega: fechaEstimadaEntrega ?? null
-	});
-}
-
-export function marcarRecibido(id: number, fechaRecepcion?: string): TrabajoLaboratorio {
-	const now = fechaRecepcion ?? todayIsoDate();
-	return updateTrabajo({ id, estado: 'RECIBIDO', fecha_recepcion: now });
-}
-
-export function marcarEntregado(id: number, fechaEntregaPaciente?: string): TrabajoLaboratorio {
-	const now = fechaEntregaPaciente ?? todayIsoDate();
-	return updateTrabajo({ id, estado: 'ENTREGADO', fecha_entrega_paciente: now });
-}
-
-export function marcarCancelado(id: number): TrabajoLaboratorio {
-	return updateTrabajo({ id, estado: 'CANCELADO' });
-}
-
-export function marcarRehacer(id: number): TrabajoLaboratorio {
-	return updateTrabajo({ id, estado: 'REHACER' });
-}
-
-/* -------------------------------------------
- * Filters and helpers
- * ------------------------------------------- */
-
-// Map estado to UI badge variant
-export function estadoVariant(
-	estado: EstadoTrabajoLaboratorio
-): 'success' | 'warning' | 'info' | 'error' | 'neutral' {
-	switch (estado) {
-		case 'LISTO':
-		case 'RECIBIDO':
-		case 'ENTREGADO':
-			return 'success';
-		case 'EN_PROCESO':
-		case 'ENVIADO':
-			return 'info';
-		case 'REHACER':
-			return 'warning';
-		case 'CANCELADO':
-			return 'error';
-		case 'CREADO':
-		default:
-			return 'neutral';
+/**
+ * Valida/asegura que el estado esté dentro de los permitidos.
+ */
+function assertEstado(estado: unknown): asserts estado is TrabajoEstado {
+	const allowed: TrabajoEstado[] = [
+		'SOLICITADO',
+		'ENVIADO',
+		'RECIBIDO',
+		'ENTREGADO',
+		'CREADO',
+		'EN_PROCESO',
+		'LISTO',
+		'CANCELADO',
+		'REHACER'
+	];
+	if (typeof estado !== 'string' || !allowed.includes(estado as TrabajoEstado)) {
+		throw new Error(`Estado no válido: ${String(estado)}. Debe ser uno de: ${allowed.join('|')}`);
 	}
 }
 
-export interface TrabajosFilter {
-	laboratorio_id?: number;
-	estado?: EstadoTrabajoLaboratorio;
-	desde?: string; // fecha_solicitud desde YYYY-MM-DD
-	hasta?: string; // fecha_solicitud hasta YYYY-MM-DD
+/**
+ * Normaliza valores de fecha a una cadena ISO completa (timestamp con Z) cuando sea necesario.
+ * - Si se pasa un Date, se retorna el ISO completo (ej. 2025-03-01T00:00:00.000Z)
+ * - Si se pasa una cadena que puede parsearse como fecha, se intenta normalizar a ISO completo.
+ * - Si no puede normalizarse, se devuelve la cadena original.
+ */
+function normalizeDateToIso(date?: Date | string | null): string | null {
+	if (!date) return null;
+	if (date instanceof Date) {
+		// Retornar ISO completo (UTC) con time y Z
+		return date.toISOString();
+	}
+	// Si es string, intentar normalizar (si viene en formato ISO o similar lo convertimos)
+	const s = String(date).trim();
+	if (!s) return null;
+	const maybeIso = new Date(s);
+	if (!Number.isNaN(maybeIso.getTime())) {
+		return maybeIso.toISOString();
+	}
+	// Fallback: devolver la cadena tal cual (backend decidirá)
+	return s;
 }
 
-export function filtrarTrabajos(filter: TrabajosFilter): TrabajoLaboratorio[] {
-	const items = listTrabajos();
-	return items.filter((t) => {
-		const byLab = filter.laboratorio_id ? t.laboratorio_id === filter.laboratorio_id : true;
-		const byEstado = filter.estado ? t.estado === filter.estado : true;
-		const d = new Date(t.fecha_solicitud).getTime();
-		const byDesde = filter.desde ? d >= new Date(filter.desde).getTime() : true;
-		const byHasta = filter.hasta ? d <= new Date(filter.hasta).getTime() : true;
-		return byLab && byEstado && byDesde && byHasta;
+/* -------------------------------------------------------------------------- */
+/*                              Laboratorios (API)                            */
+/* -------------------------------------------------------------------------- */
+
+export async function createLaboratorio(input: CreateLaboratorioInput): Promise<Laboratorio> {
+	const resp = await apiClient.post<Laboratorio>('laboratorios', input);
+	if (!resp.ok) {
+		throw errorFromResponse(resp, 'No se pudo crear el laboratorio');
+	}
+	return unwrapPayload<Laboratorio>(resp.data);
+}
+
+export async function updateLaboratorio(
+	id: number,
+	input: UpdateLaboratorioInput
+): Promise<Laboratorio> {
+	const resp = await apiClient.put<Laboratorio>(`laboratorios/${id}`, input);
+	if (!resp.ok) {
+		throw errorFromResponse(resp, `No se pudo actualizar el laboratorio ${id}`);
+	}
+	return unwrapPayload<Laboratorio>(resp.data);
+}
+
+export async function deleteLaboratorio(id: number): Promise<void> {
+	const resp = await apiClient.delete(`laboratorios/${id}`);
+	if (!resp.ok) {
+		throw errorFromResponse(resp, `No se pudo eliminar el laboratorio ${id}`);
+	}
+}
+
+export async function getLaboratorio(id: number): Promise<Laboratorio> {
+	const resp = await apiClient.get<Laboratorio>(`laboratorios/${id}`);
+	if (!resp.ok) {
+		throw errorFromResponse(resp, `Laboratorio ${id} no encontrado`);
+	}
+	return unwrapPayload<Laboratorio>(resp.data);
+}
+
+export async function listLaboratorios(): Promise<Laboratorio[]> {
+	const resp = await apiClient.get<Laboratorio[]>('laboratorios');
+	if (!resp.ok) return [];
+	return ensureArray<Laboratorio>(resp.data);
+}
+
+/* -------------------------------------------------------------------------- */
+/*                        Trabajos de laboratorio (API)                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Crea un trabajo de laboratorio.
+ * Acepta tanto el DTO `TrabajoLaboratorioCreateDto` (dates como Date)
+ * como el `CreateTrabajoInput` (fechas como strings).
+ *
+ * Normaliza las fechas a YYYY-MM-DD antes de enviar al API.
+ */
+export async function createTrabajoLaboratorio(
+	input: TrabajoLaboratorioCreateDto | CreateTrabajoInput
+): Promise<TrabajoLaboratorio> {
+	// Validar estado (lanza si no es válido)
+	assertEstado((input as any).estado);
+
+	// Construir payload normalizado que el backend espera
+	const payload: Record<string, unknown> = {
+		laboratorio_id: (input as any).laboratorio_id,
+		consulta_id: (input as any).consulta_id ?? null,
+		descripcion: (input as any).descripcion ?? null,
+		estado: (input as any).estado
+	};
+
+	// Normalizar fechas (acepta Date o string)
+	if ((input as any).fecha_recepcion !== undefined) {
+		payload.fecha_recepcion = normalizeDateToIso((input as any).fecha_recepcion);
+	}
+	if ((input as any).fecha_entrega_paciente !== undefined) {
+		payload.fecha_entrega_paciente = normalizeDateToIso((input as any).fecha_entrega_paciente);
+	}
+
+	const resp = await apiClient.post<TrabajoLaboratorio>('trabajos-laboratorio', payload);
+	if (!resp.ok) {
+		throw errorFromResponse(resp, 'No se pudo crear el trabajo de laboratorio');
+	}
+	return unwrapPayload<TrabajoLaboratorio>(resp.data);
+}
+
+export async function updateTrabajoLaboratorio(
+	id: number,
+	input: UpdateTrabajoInput
+): Promise<TrabajoLaboratorio> {
+	if (input.estado) assertEstado(input.estado);
+	const resp = await apiClient.patch<TrabajoLaboratorio>(`trabajos-laboratorio/${id}`, input);
+	if (!resp.ok) {
+		throw errorFromResponse(resp, `No se pudo actualizar el trabajo de laboratorio ${id}`);
+	}
+	return unwrapPayload<TrabajoLaboratorio>(resp.data);
+}
+
+export async function getTrabajoLaboratorio(id: number): Promise<TrabajoLaboratorio> {
+	const resp = await apiClient.get<TrabajoLaboratorio>(`trabajos-laboratorio/${id}`);
+	if (!resp.ok) {
+		throw errorFromResponse(resp, `Trabajo de laboratorio ${id} no encontrado`);
+	}
+	return unwrapPayload<TrabajoLaboratorio>(resp.data);
+}
+
+export async function listTrabajosLaboratorio(): Promise<TrabajoLaboratorio[]> {
+	const resp = await apiClient.get<TrabajoLaboratorio[]>('trabajos-laboratorio');
+	if (!resp.ok) return [];
+	return ensureArray<TrabajoLaboratorio>(resp.data);
+}
+
+/* -------------------------------------------------------------------------- */
+/*                      Helpers de flujo de estado (opcional)                 */
+/* -------------------------------------------------------------------------- */
+
+export async function marcarEnviado(id: number): Promise<TrabajoLaboratorio> {
+	return updateTrabajoLaboratorio(id, { estado: 'ENVIADO' });
+}
+
+export async function marcarRecibido(
+	id: number,
+	fecha_recepcion?: string
+): Promise<TrabajoLaboratorio> {
+	return updateTrabajoLaboratorio(id, {
+		estado: 'RECIBIDO',
+		fecha_recepcion: fecha_recepcion ?? null
 	});
 }
 
-/* -------------------------------------------
- * Seed data for development
- * ------------------------------------------- */
-
-export function seedLaboratoriosMock(): void {
-	// Avoid duplications if already seeded
-	if (listLaboratorios().length > 0) return;
-
-	createLaboratorio({
-		nombre: 'Lab Dental Pro',
-		direccion: 'Calle 20 # 30-40',
-		telefono: '600123456',
-		email: 'contacto@labdentalpro.com',
-		activo: true,
-		tiempo_estimado_dias: 7
-	});
-
-	createLaboratorio({
-		nombre: 'Smile Lab',
-		direccion: 'Av 3 # 15-22',
-		telefono: '600987654',
-		email: 'info@smilelab.co',
-		activo: true,
-		tiempo_estimado_dias: 5
-	});
-
-	createLaboratorio({
-		nombre: 'DentalTech',
-		direccion: 'Cra 45 # 12-10',
-		telefono: '601234567',
-		email: 'service@dentaltech.io',
-		activo: true,
-		tiempo_estimado_dias: 6
-	});
-}
-
-export function seedTrabajosMock(): void {
-	// Requires labs seeded
-	seedLaboratoriosMock();
-	const labs = listLaboratorios();
-	if (labs.length === 0) return;
-
-	// Create example trabajos loosely (tratamiento_id refs are mock numbers)
-	const lab1 = labs.find((l) => l.nombre === 'Lab Dental Pro')!;
-	const lab2 = labs.find((l) => l.nombre === 'Smile Lab')!;
-	const lab3 = labs.find((l) => l.nombre === 'DentalTech')!;
-
-	createTrabajo({
-		tratamiento_id: 101, // mock
-		laboratorio_id: lab1.id,
-		descripcion_trabajo: 'Corona cerámica premolar',
-		estado: 'EN_PROCESO',
-		fecha_solicitud: todayIsoDate(),
-		fecha_estimada_entrega: todayIsoDate(),
-		costo_laboratorio: 120
-	});
-
-	createTrabajo({
-		tratamiento_id: 102,
-		laboratorio_id: lab2.id,
-		descripcion_trabajo: 'Prótesis parcial removible',
-		estado: 'ENVIADO',
-		fecha_solicitud: todayIsoDate(),
-		costo_laboratorio: 95.5
-	});
-
-	createTrabajo({
-		tratamiento_id: 103,
-		laboratorio_id: lab3.id,
-		descripcion_trabajo: 'Carillas estéticas',
-		estado: 'LISTO',
-		fecha_solicitud: todayIsoDate(),
-		fecha_estimada_entrega: todayIsoDate(),
-		costo_laboratorio: 110
+export async function marcarEntregado(
+	id: number,
+	fecha_entrega_paciente?: string
+): Promise<TrabajoLaboratorio> {
+	return updateTrabajoLaboratorio(id, {
+		estado: 'ENTREGADO',
+		fecha_entrega_paciente: fecha_entrega_paciente ?? null
 	});
 }

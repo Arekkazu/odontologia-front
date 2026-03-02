@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Card, Button, Input, Badge } from '$lib/ui';
 	import { onMount } from 'svelte';
-	import { listPacientes, seedMockData, createTratamiento } from '$lib/services/api/pacientes';
+	import { listPacientes, createTratamiento } from '$lib/services/api/pacientes';
 	import { createConsulta } from '$lib/services/api/consultas';
 	import type { Paciente } from '$lib/services/api/pacientes';
 
@@ -14,12 +14,26 @@
 	let costoTratamiento = '';
 
 	let loading = false;
+	let loadingPacientes = true;
 	let error = '';
 	let success = '';
+	let warningPacientes = '';
 
-	onMount(() => {
-		seedMockData();
-		pacientes = listPacientes();
+	onMount(async () => {
+		loadingPacientes = true;
+		try {
+			pacientes = await listPacientes();
+			if (pacientes.length === 0) {
+				warningPacientes =
+					'No hay pacientes disponibles. Es posible que el endpoint GET /api/patient no esté implementado en el backend.';
+			}
+		} catch (err) {
+			console.error('Error cargando pacientes:', err);
+			warningPacientes =
+				'No se pudieron cargar los pacientes. Verifica que el backend tenga implementado GET /api/patient';
+		} finally {
+			loadingPacientes = false;
+		}
 	});
 
 	async function submitForm(e: Event) {
@@ -36,16 +50,21 @@
 			error = 'El motivo de la consulta es requerido';
 			return;
 		}
+		if (!diagnostico.trim()) {
+			error = 'El diagnóstico es requerido';
+			return;
+		}
 
 		loading = true;
 
 		try {
 			// Crear consulta
-			const consulta = createConsulta({
+			const consulta = await createConsulta({
 				paciente_id: pacienteSeleccionado,
 				motivo: motivo.trim(),
-				diagnostico: diagnostico.trim() || undefined,
-				observaciones: observaciones.trim() || undefined
+				diagnostico: diagnostico.trim(),
+				observaciones: observaciones.trim() || undefined,
+				fecha_consulta: new Date().toISOString()
 			});
 
 			// Crear tratamiento si se especifica
@@ -109,6 +128,13 @@
 					</div>
 				{/if}
 
+				{#if warningPacientes}
+					<div class="alert alert-warning">
+						<strong>Aviso:</strong>
+						{warningPacientes}
+					</div>
+				{/if}
+
 				<!-- Seleccionar paciente -->
 				<div class="form-group">
 					<label for="paciente" class="label">
@@ -119,16 +145,31 @@
 						bind:value={pacienteSeleccionado}
 						class="input"
 						required
-						disabled={loading}
+						disabled={loading || loadingPacientes || pacientes.length === 0}
 					>
-						<option value={null}>— Selecciona un paciente —</option>
+						<option value={null}>
+							{#if loadingPacientes}
+								Cargando pacientes...
+							{:else if pacientes.length === 0}
+								No hay pacientes disponibles
+							{:else}
+								— Selecciona un paciente —
+							{/if}
+						</option>
 						{#each pacientes as p}
 							<option value={p.id}>
-								{p.nombre_completo} ({p.numero_identificacion})
+								{p.name}
+								{p.lastname} - {p.typeDni}: {p.dni}
 							</option>
 						{/each}
 					</select>
-					<p class="help">Selecciona el paciente que está siendo atendido.</p>
+					<p class="help">
+						{#if pacientes.length === 0 && !loadingPacientes}
+							⚠️ No hay pacientes disponibles. El backend necesita implementar GET /api/patient
+						{:else}
+							Selecciona el paciente que está siendo atendido.
+						{/if}
+					</p>
 				</div>
 
 				<!-- Motivo de la consulta -->
@@ -228,12 +269,16 @@
 		<Card title="Referencia rápida" hoverable>
 			<div class="reference">
 				<h3 class="ref-title">Pacientes registrados</h3>
-				{#if pacientes.length > 0}
+				{#if loadingPacientes}
+					<p class="text-soft">Cargando pacientes...</p>
+				{:else if pacientes.length > 0}
 					<div class="ref-list">
 						{#each pacientes as p}
 							<div class="ref-item">
-								<div class="ref-name">{p.nombre_completo}</div>
-								<div class="ref-meta">ID: {p.numero_identificacion}</div>
+								<div class="ref-name">{p.name} {p.lastname}</div>
+								<div class="ref-meta">
+									{typeof p.typeDni === 'string' ? p.typeDni : 'ID'}: {p.dni}
+								</div>
 								<Button variant="outline" size="sm" on:click={() => irAlPaciente(p.id)}>
 									Ver perfil
 								</Button>
@@ -241,7 +286,14 @@
 						{/each}
 					</div>
 				{:else}
-					<p class="text-soft">No hay pacientes registrados aún.</p>
+					<p class="text-soft">
+						No hay pacientes disponibles. El backend necesita implementar:<br />
+						<code
+							style="font-size: 0.75rem; background: var(--color-gray-100); padding: 2px 4px; border-radius: 3px;"
+						>
+							GET /api/patient
+						</code>
+					</p>
 				{/if}
 
 				<hr class="ref-divider" />
@@ -393,6 +445,12 @@
 		background: var(--color-brand-100);
 		color: var(--color-brand-700);
 		border: 1px solid var(--color-brand-200);
+	}
+
+	.alert-warning {
+		background: #fef3cd;
+		color: #856404;
+		border: 1px solid #ffeaa7;
 	}
 
 	/* Panel de referencia */

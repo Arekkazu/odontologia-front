@@ -1,206 +1,232 @@
 <script lang="ts">
-  import { Card, Button, Input, Badge } from '$lib/ui';
-  import { listPacientes, seedMockData, type Paciente as PacienteModel } from '$lib/services/api/pacientes';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { Card, Button, Input, Badge } from '$lib/ui';
+	import type { Paciente as PacienteModel } from '$lib/services/api/pacientes';
+	export let data: { pacientes: PacienteModel[]; error?: string | null };
 
-  // Inicializar datos mock si no existen (solo en dev/mock)
-  seedMockData();
+	type Paciente = PacienteModel & {
+		saldo_pendiente?: number;
+	};
 
-  // Placeholder state simulating patients list and filters
-  type Paciente = PacienteModel & {
-    saldo_pendiente?: number;
-  };
+	let searchQuery = '';
+	const basePacientes = (data?.pacientes ?? []).map((p) => ({
+		...p,
+		saldo_pendiente: 0
+	}));
+	// Log what we received from the server so we can debug if the page
+	// isn't showing patients even when the backend returns data.
+	console.log('Received pacientes from load:', data?.pacientes ?? []);
+	let pacientes: Paciente[] = basePacientes;
+	let loading = false;
+	let error: string | null = data?.error ?? null;
+	let filteredPacientes: Paciente[] = basePacientes;
 
-  let searchQuery = '';
-  let filterSaldoPendiente = false;
+	// Make DNI filtering robust: backend may return numeric DNIs, so convert to string.
+	// Also add a debug log to see filtered results and the current query.
+	function nombreCompleto(p: Paciente): string {
+		return `${p.name || ''} ${p.lastname || ''}`.trim();
+	}
+	$: {
+		const q = searchQuery.trim().toLowerCase();
+		filteredPacientes = pacientes
+			.filter((p) => {
+				const fullName = nombreCompleto(p).toLowerCase();
+				const dniStr = String(p.dni ?? '').toLowerCase();
+				const matches = !q || fullName.includes(q) || dniStr.includes(q);
+				return matches;
+			})
+			.sort((a, b) => nombreCompleto(a).localeCompare(nombreCompleto(b)));
+		console.log('filteredPacientes count:', filteredPacientes.length, 'query:', searchQuery);
+	}
 
-  // Cargar pacientes desde servicio mock
-  let pacientes: Paciente[] = listPacientes().map((p) => ({
-    ...p,
-    // saldo_pendiente se calculará en otra iteración con tratamientos/pagos;
-    // por ahora, lo dejamos como 0 para la lista.
-    saldo_pendiente: 0
-  }));
+	function nuevoPaciente() {
+		goto(resolve('/pacientes/nuevo'));
+	}
 
-  $: filteredPacientes = pacientes
-    .filter((p) => {
-      const q = searchQuery.trim().toLowerCase();
-      const matches =
-        !q ||
-        p.nombre_completo.toLowerCase().includes(q) ||
-        p.numero_identificacion.toLowerCase().includes(q);
-      const bySaldo = filterSaldoPendiente ? p.saldo_pendiente > 0 : true;
-      return matches && bySaldo;
-    })
-    .sort((a, b) => a.nombre_completo.localeCompare(b.nombre_completo));
+	function verPaciente(id: number) {
+		goto(resolve(`/pacientes/${id}`));
+	}
 
-  function nuevoPaciente() {
-    window.location.href = '/pacientes/nuevo';
-  }
-
-  function verPaciente(id: number) {
-    window.location.href = `/pacientes/${id}`;
-  }
-
-  function registrarPago(id: number) {
-    window.location.href = `/pacientes/${id}/pagar`;
-  }
+	function registrarPago(id: number) {
+		goto(resolve(`/pacientes/${id}/pagar`));
+	}
 </script>
 
 <section class="pacientes">
-  <div class="header-row">
-    <h1 class="title">Pacientes</h1>
-    <div class="actions">
-      <Button variant="primary" on:click={nuevoPaciente}>Nuevo paciente</Button>
-    </div>
-  </div>
+	<div class="header-row">
+		<h1 class="title">Pacientes</h1>
+		<div class="actions">
+			<Button variant="primary" ariaLabel="Nuevo paciente" on:click={nuevoPaciente}
+				>Nuevo paciente</Button
+			>
+		</div>
+	</div>
 
-  <Card title="Búsqueda y filtros" hoverable>
-    <div class="filters">
-      <Input
-        type="search"
-        placeholder="Buscar por nombre o identificación"
-        bind:value={searchQuery}
-        description="Escribe parte del nombre o documento."
-      />
-      <label class="checkbox">
-        <input type="checkbox" bind:checked={filterSaldoPendiente} />
-        <span>Solo con saldo pendiente</span>
-      </label>
-    </div>
-  </Card>
+	<Card
+		title="Búsqueda"
+		subtitle="Filtra por nombre o documento"
+		hoverable
+		ariaLabel="Búsqueda de pacientes"
+	>
+		<div class="filters">
+			<Input
+				type="search"
+				label="Buscar"
+				name="searchQuery"
+				id="searchQuery"
+				placeholder="Buscar por nombre o identificación"
+				bind:value={searchQuery}
+				description="Escribe parte del nombre o documento."
+			/>
+			<div class="status">
+				{#if loading}
+					<Badge pill variant="info" ariaLabel="Cargando">Cargando...</Badge>
+				{:else if error}
+					<Badge pill variant="error" ariaLabel="Error de carga">Error</Badge>
+				{:else}
+					<Badge pill variant="success" ariaLabel="Carga completa">Listo</Badge>
+				{/if}
+			</div>
+		</div>
+	</Card>
 
-  <Card title="Listado de pacientes" subtitle={`Total: ${filteredPacientes.length}`} hoverable>
-    <div class="tabla-wrapper">
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Nombre</th>
-            <th>Identificación</th>
-            <th>Teléfono</th>
-            <th>Saldo</th>
-            <th>Estado</th>
-            <th style="width:220px;">Acciones</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#if filteredPacientes.length === 0}
-            <tr>
-              <td colspan="6" class="text-soft">No hay resultados para tu búsqueda.</td>
-            </tr>
-          {:else}
-            {#each filteredPacientes as p}
-              <tr>
-                <td>
-                  <div class="col-main">
-                    <div class="name">{p.nombre_completo}</div>
-                    {#if p.direccion}
-                      <div class="muted">{p.direccion}</div>
-                    {/if}
-                  </div>
-                </td>
-                <td>{p.numero_identificacion}</td>
-                <td>{p.telefono || '—'}</td>
-                <td>
-                  {#if p.saldo_pendiente > 0}
-                    <span class="saldo-deuda">${p.saldo_pendiente.toFixed(2)}</span>
-                  {:else}
-                    <span class="saldo-cero">$0.00</span>
-                  {/if}
-                </td>
-                <td>
-                  <Badge variant={p.activo ? 'success' : 'neutral'} pill>
-                    {p.activo ? 'Activo' : 'Inactivo'}
-                  </Badge>
-                </td>
-                <td>
-                  <div class="row-actions">
-                    <Button variant="secondary" size="sm" on:click={() => verPaciente(p.id)}>Ver</Button>
-                    <Button variant="outline" size="sm" on:click={() => registrarPago(p.id)}>Registrar pago</Button>
-                  </div>
-                </td>
-              </tr>
-            {/each}
-          {/if}
-        </tbody>
-      </table>
-    </div>
-  </Card>
+	{#if error}
+		<Card hoverable>
+			<div class="error-row">
+				<Badge variant="error" pill>Error</Badge>
+				<div class="msg">{error}</div>
+				<Button
+					variant="outline"
+					size="sm"
+					ariaLabel="Reintentar carga"
+					on:click={() => location.reload()}>Reintentar</Button
+				>
+			</div>
+		</Card>
+	{/if}
+
+	<Card
+		title="Listado de pacientes"
+		subtitle={`Total: ${filteredPacientes.length}`}
+		hoverable
+		ariaLabel="Listado de pacientes"
+	>
+		<div class="tabla-wrapper">
+			<table class="table">
+				<thead>
+					<tr>
+						<th>Nombre</th>
+						<th>Identificación</th>
+						<th>Teléfono</th>
+						<th style="width:220px;">Acciones</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#if loading}
+						<tr>
+							<td colspan="4" class="text-soft">Cargando pacientes...</td>
+						</tr>
+					{:else if filteredPacientes.length === 0}
+						<tr>
+							<td colspan="4" class="text-soft">No hay resultados para tu búsqueda.</td>
+						</tr>
+					{:else}
+						{#each filteredPacientes as p (p.id)}
+							<tr>
+								<td>
+									<div class="col-main">
+										<div class="name">{nombreCompleto(p)}</div>
+									</div>
+								</td>
+								<td>{p.dni}</td>
+								<td>{p.phone || '—'}</td>
+								<td>
+									<div class="row-actions">
+										<Button variant="secondary" size="sm" on:click={() => verPaciente(p.id)}
+											>Ver</Button
+										>
+										<Button variant="outline" size="sm" on:click={() => registrarPago(p.id)}
+											>Registrar pago</Button
+										>
+									</div>
+								</td>
+							</tr>
+						{/each}
+					{/if}
+				</tbody>
+			</table>
+		</div>
+	</Card>
 </section>
 
 <style>
-  .pacientes {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-  }
+	.pacientes {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-4);
+	}
 
-  .header-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-  }
+	.header-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-3);
+	}
 
-  .title {
-    margin: 0;
-    font-size: var(--font-size-2xl);
-    line-height: var(--line-height-tight);
-  }
+	.title {
+		margin: 0;
+		font-size: var(--font-size-2xl);
+		line-height: var(--line-height-tight);
+	}
 
-  .actions {
-    display: inline-flex;
-    gap: var(--space-2);
-  }
+	.actions {
+		display: inline-flex;
+		gap: var(--space-2);
+	}
 
-  .filters {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: var(--space-3);
-    align-items: center;
-  }
+	.filters {
+		display: grid;
+		grid-template-columns: 1fr auto;
+		gap: var(--space-3);
+		align-items: center;
+	}
 
-  @media (max-width: 640px) {
-    .filters {
-      grid-template-columns: 1fr;
-    }
-  }
+	@media (max-width: 640px) {
+		.filters {
+			grid-template-columns: 1fr;
+		}
+	}
 
-  .checkbox {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    font-size: var(--font-size-sm);
-    color: var(--color-text);
-    user-select: none;
-  }
+	.status {
+		display: inline-flex;
+		align-items: center;
+		justify-content: flex-end;
+	}
 
-  .tabla-wrapper {
-    overflow: auto;
-    border-radius: var(--radius-sm);
-  }
+	.tabla-wrapper {
+		overflow: auto;
+		border-radius: var(--radius-sm);
+	}
 
-  .col-main .name {
-    font-weight: 600;
-  }
+	.col-main .name {
+		font-weight: 600;
+	}
 
-  .muted {
-    font-size: var(--font-size-sm);
-    color: var(--color-muted);
-  }
+	.row-actions {
+		display: inline-flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+	}
 
-  .row-actions {
-    display: inline-flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-  }
+	.error-row {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-2);
+		flex-wrap: wrap;
+	}
 
-  .saldo-deuda {
-    color: var(--color-error);
-    font-weight: 700;
-  }
-
-  .saldo-cero {
-    color: var(--color-success);
-    font-weight: 700;
-  }
+	.msg {
+		font-weight: 600;
+	}
 </style>

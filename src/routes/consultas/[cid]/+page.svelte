@@ -2,13 +2,18 @@
 	import { Card, Button, Badge } from '$lib/ui';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
-	import { seedMockData, listTratamientosByConsulta, listPagosByTratamiento, computeTratamientoSaldo } from '$lib/services/api/pacientes';
-	import { getConsulta, seedConsultasMock } from '$lib/services/api/consultas';
-	import type { ConsultaConDetalles } from '$lib/services/api/consultas';
-	import type { TratamientoConSaldo } from '$lib/services/api/pacientes';
+	import {
+		getPacienteById,
+		listTratamientosByConsulta,
+		computeTratamientoSaldo
+	} from '$lib/services/api/pacientes';
+	import { getConsulta } from '$lib/services/api/consultas';
+	import type { Consulta } from '$lib/services/api/consultas';
+	import type { Paciente, TratamientoConSaldo } from '$lib/services/api/pacientes';
 
 	let consultaId: number | null = null;
-	let consulta: ConsultaConDetalles | null = null;
+	let consulta: Consulta | null = null;
+	let paciente: Paciente | null = null;
 	let tratamientos: TratamientoConSaldo[] = [];
 	let loading = true;
 	let error = '';
@@ -20,6 +25,19 @@
 			minimumFractionDigits: 0,
 			maximumFractionDigits: 2
 		}).format(amount);
+	}
+
+	function formatDate(date?: string | null): string {
+		if (!date) return '—';
+		const parsed = new Date(date);
+		if (Number.isNaN(parsed.getTime())) return date;
+		return parsed.toLocaleDateString('es-ES', {
+			year: 'numeric',
+			month: 'long',
+			day: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit'
+		});
 	}
 
 	function irAConsultas() {
@@ -38,32 +56,44 @@
 		window.location.href = `/pacientes/${consulta?.paciente_id}/tratamientos/${tratamientoId}/pagar`;
 	}
 
-	onMount(() => {
-		seedMockData();
-		seedConsultasMock();
-
+	onMount(async () => {
 		// Obtener el ID de la consulta desde la URL
 		const cid = $page.params.cid;
-		if (cid) {
-			consultaId = parseInt(cid, 10);
-
-			if (!isNaN(consultaId)) {
-				const consultaData = getConsulta(consultaId);
-
-				if (consultaData) {
-					consulta = consultaData;
-					tratamientos = listTratamientosByConsulta(consultaId).map(computeTratamientoSaldo);
-				} else {
-					error = 'Consulta no encontrada';
-				}
-			} else {
-				error = 'ID de consulta inválido';
-			}
-		} else {
+		if (!cid) {
 			error = 'No se especificó una consulta';
+			loading = false;
+			return;
 		}
 
-		loading = false;
+		consultaId = parseInt(cid, 10);
+
+		if (isNaN(consultaId)) {
+			error = 'ID de consulta inválido';
+			loading = false;
+			return;
+		}
+
+		try {
+			// Obtener consulta desde el backend
+			consulta = await getConsulta(consultaId);
+
+			// Obtener datos del paciente
+			if (consulta.paciente_id) {
+				try {
+					paciente = await getPacienteById(consulta.paciente_id);
+				} catch (err) {
+					console.error('Error cargando paciente:', err);
+				}
+			}
+
+			// Cargar tratamientos (mocks por ahora)
+			tratamientos = listTratamientosByConsulta(consultaId).map(computeTratamientoSaldo);
+		} catch (err) {
+			console.error('Error cargando consulta:', err);
+			error = err instanceof Error ? err.message : 'Consulta no encontrada';
+		} finally {
+			loading = false;
+		}
 	});
 </script>
 
@@ -72,7 +102,12 @@
 		<div>
 			<h1 class="title">Detalle de consulta</h1>
 			{#if consulta}
-				<p class="subtitle">#{consulta.id} • {consulta.paciente_nombre}</p>
+				<p class="subtitle">
+					#{consulta.id}
+					{#if paciente}
+						• {paciente.name} {paciente.lastname}
+					{/if}
+				</p>
 			{/if}
 		</div>
 		<div class="actions">
@@ -97,15 +132,20 @@
 					<div class="info-item">
 						<div class="label">Paciente</div>
 						<div class="value">
-							<button class="link-btn" on:click={() => irAlPaciente(consulta.paciente_id)}>
-								{consulta.paciente_nombre}
-							</button>
+							{#if paciente}
+								<button class="link-btn" on:click={() => irAlPaciente(consulta.paciente_id)}>
+									{paciente.name}
+									{paciente.lastname}
+								</button>
+							{:else}
+								Paciente #{consulta.paciente_id}
+							{/if}
 						</div>
 					</div>
 
 					<div class="info-item">
 						<div class="label">Fecha de consulta</div>
-						<div class="value">{consulta.fecha_formato}</div>
+						<div class="value">{formatDate(consulta.fecha_consulta)}</div>
 					</div>
 
 					<div class="info-item">
@@ -132,38 +172,47 @@
 				<div class="summary-grid">
 					<div class="summary-item">
 						<div class="summary-label">Costo total</div>
-						<div class="summary-value">{formatMoney(consulta.costo_total_tratamientos)}</div>
+						<div class="summary-value">
+							{formatMoney(tratamientos.reduce((sum, t) => sum + (t.costo_total || 0), 0))}
+						</div>
 					</div>
 
 					<div class="summary-item">
 						<div class="summary-label">Total pagado</div>
-						<div class="summary-value text-success">{formatMoney(consulta.total_pagos)}</div>
+						<div class="summary-value text-success">
+							{formatMoney(tratamientos.reduce((sum, t) => sum + (t.totalPagos || 0), 0))}
+						</div>
 					</div>
 
 					<div class="summary-item">
 						<div class="summary-label">Saldo pendiente</div>
-						<div class="summary-value" class:text-warning={consulta.saldo_pendiente > 0}>
-							{formatMoney(consulta.saldo_pendiente)}
+						<div
+							class="summary-value"
+							class:text-warning={tratamientos.some((t) => t.saldoPendiente > 0)}
+						>
+							{formatMoney(tratamientos.reduce((sum, t) => sum + (t.saldoPendiente || 0), 0))}
 						</div>
 					</div>
 
 					<div class="summary-item">
 						<div class="summary-label">Tratamientos</div>
-						<div class="summary-value">{consulta.tratamientos_count}</div>
+						<div class="summary-value">{tratamientos.length}</div>
 					</div>
 				</div>
 
 				<div class="actions-footer">
-					{#if consulta.saldo_pendiente > 0}
-						<Button variant="primary" on:click={() => nuevoTratamiento(consulta.id)}>
-							Registrar tratamiento
-						</Button>
-					{/if}
+					<Button variant="primary" on:click={() => nuevoTratamiento(consulta.id)}>
+						Registrar tratamiento
+					</Button>
 				</div>
 			</Card>
 
 			<!-- Tratamientos de la consulta -->
-			<Card title="Tratamientos" subtitle={`${tratamientos.length} tratamiento${tratamientos.length !== 1 ? 's' : ''}`} hoverable>
+			<Card
+				title="Tratamientos"
+				subtitle={`${tratamientos.length} tratamiento${tratamientos.length !== 1 ? 's' : ''}`}
+				hoverable
+			>
 				{#if tratamientos.length === 0}
 					<div class="empty-state">
 						<p>No hay tratamientos registrados en esta consulta.</p>
@@ -215,7 +264,11 @@
 
 								<div class="treatment-actions">
 									{#if tratamiento.saldoPendiente > 0}
-										<Button variant="primary" size="sm" on:click={() => registrarPago(tratamiento.id)}>
+										<Button
+											variant="primary"
+											size="sm"
+											on:click={() => registrarPago(tratamiento.id)}
+										>
 											Registrar pago
 										</Button>
 									{:else}
@@ -234,9 +287,7 @@
 					<Button variant="secondary" on:click={() => irAlPaciente(consulta.paciente_id)}>
 						Ver perfil del paciente
 					</Button>
-					<Button variant="outline" on:click={irAConsultas}>
-						Volver a consultas
-					</Button>
+					<Button variant="outline" on:click={irAConsultas}>Volver a consultas</Button>
 				</div>
 			</Card>
 		</div>
