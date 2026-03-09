@@ -1,5 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
 import { browser } from '$app/environment';
+import { horarioService } from '$lib/services/api/horario';
 
 interface HorarioState {
 	isRunning: boolean;
@@ -9,6 +10,8 @@ interface HorarioState {
 	accumulatedMs: number;
 	fecha: string; // YYYY-MM-DD
 	lastUpdate: number; // timestamp
+	horarioId: number | null; // ID del registro en backend
+	syncedWithBackend: boolean; // indica si está sincronizado
 }
 
 const STORAGE_KEY = 'horario_cronometro';
@@ -24,7 +27,9 @@ function getInitialState(): HorarioState {
 			pauseStart: null,
 			accumulatedMs: 0,
 			fecha: new Date().toISOString().split('T')[0],
-			lastUpdate: Date.now()
+			lastUpdate: Date.now(),
+			horarioId: null,
+			syncedWithBackend: false
 		};
 	}
 
@@ -55,7 +60,9 @@ function getInitialState(): HorarioState {
 				pauseStart: null,
 				accumulatedMs: 0,
 				fecha: today,
-				lastUpdate: Date.now()
+				lastUpdate: Date.now(),
+				horarioId: null,
+				syncedWithBackend: false
 			};
 		} catch (err) {
 			console.error('Error recuperando estado del cronómetro:', err);
@@ -69,7 +76,9 @@ function getInitialState(): HorarioState {
 		pauseStart: null,
 		accumulatedMs: 0,
 		fecha: new Date().toISOString().split('T')[0],
-		lastUpdate: Date.now()
+		lastUpdate: Date.now(),
+		horarioId: null,
+		syncedWithBackend: false
 	};
 }
 
@@ -83,6 +92,31 @@ function saveToStorage(state: HorarioState) {
 		localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 	} catch (err) {
 		console.error('Error guardando estado del cronómetro:', err);
+	}
+}
+
+// Función para sincronizar snapshot con backend
+async function syncSnapshot(state: HorarioState) {
+	if (!browser || !state.isRunning) return;
+
+	try {
+		const snapshot = await horarioService.guardarSnapshot({
+			fecha: state.fecha,
+			accumulated_ms: state.accumulatedMs,
+			is_running: state.isRunning,
+			is_paused: state.isPaused
+		});
+
+		console.log('✅ Snapshot sincronizado con backend:', snapshot);
+
+		// Actualizar que está sincronizado
+		horarioState.update((s) => ({
+			...s,
+			syncedWithBackend: true
+		}));
+	} catch (error) {
+		console.error('❌ Error sincronizando snapshot con backend:', error);
+		// No lanzamos error, el store local sigue funcionando
 	}
 }
 
@@ -123,10 +157,15 @@ export function formatTimeShort(ms: number): string {
 export const horario = {
 	subscribe: horarioState.subscribe,
 
-	iniciar() {
+	/**
+	 * Iniciar jornada laboral
+	 * Sincroniza con backend llamando a POST /api/horario/entry
+	 */
+	async iniciar() {
 		const now = Date.now();
 		const today = new Date().toISOString().split('T')[0];
 
+		// Primero actualizar el store local
 		horarioState.update((state) => {
 			const newState: HorarioState = {
 				isRunning: true,
@@ -135,14 +174,46 @@ export const horario = {
 				pauseStart: null,
 				accumulatedMs: 0,
 				fecha: today,
-				lastUpdate: now
+				lastUpdate: now,
+				horarioId: null,
+				syncedWithBackend: false
 			};
 			saveToStorage(newState);
 			return newState;
 		});
+
+		// Intentar sincronizar con backend
+		if (browser) {
+			try {
+				const registro = await horarioService.registrarEntrada({
+					fecha: today,
+					hora_entrada: new Date(now).toISOString()
+				});
+
+				console.log('✅ Entrada registrada en backend:', registro);
+
+				// Actualizar con el ID del backend
+				horarioState.update((state) => {
+					const newState = {
+						...state,
+						horarioId: registro.id,
+						syncedWithBackend: true
+					};
+					saveToStorage(newState);
+					return newState;
+				});
+			} catch (error) {
+				console.error('❌ Error registrando entrada en backend:', error);
+				// No lanzamos error, el store local sigue funcionando
+			}
+		}
 	},
 
-	pausar() {
+	/**
+	 * Pausar cronómetro
+	 * Sincroniza con backend llamando a POST /api/horario/pause/start
+	 */
+	async pausar() {
 		const now = Date.now();
 
 		horarioState.update((state) => {
@@ -154,14 +225,39 @@ export const horario = {
 				pauseStart: now,
 				accumulatedMs: state.accumulatedMs + (now - state.startTime),
 				startTime: null,
-				lastUpdate: now
+				lastUpdate: now,
+				syncedWithBackend: false
 			};
 			saveToStorage(newState);
 			return newState;
 		});
+
+		// Intentar sincronizar con backend
+		if (browser) {
+			try {
+				const pausa = await horarioService.iniciarPausa({
+					fecha: get(horarioState).fecha,
+					hora_inicio: new Date(now).toISOString()
+				});
+
+				console.log('✅ Pausa iniciada en backend:', pausa);
+
+				horarioState.update((state) => {
+					const newState = { ...state, syncedWithBackend: true };
+					saveToStorage(newState);
+					return newState;
+				});
+			} catch (error) {
+				console.error('❌ Error iniciando pausa en backend:', error);
+			}
+		}
 	},
 
-	reanudar() {
+	/**
+	 * Reanudar cronómetro
+	 * Sincroniza con backend llamando a POST /api/horario/pause/end
+	 */
+	async reanudar() {
 		const now = Date.now();
 
 		horarioState.update((state) => {
@@ -172,24 +268,51 @@ export const horario = {
 				isPaused: false,
 				pauseStart: null,
 				startTime: now,
-				lastUpdate: now
+				lastUpdate: now,
+				syncedWithBackend: false
 			};
 			saveToStorage(newState);
 			return newState;
 		});
+
+		// Intentar sincronizar con backend
+		if (browser) {
+			try {
+				const pausa = await horarioService.finalizarPausa({
+					fecha: get(horarioState).fecha,
+					hora_fin: new Date(now).toISOString()
+				});
+
+				console.log('✅ Pausa finalizada en backend:', pausa);
+
+				horarioState.update((state) => {
+					const newState = { ...state, syncedWithBackend: true };
+					saveToStorage(newState);
+					return newState;
+				});
+			} catch (error) {
+				console.error('❌ Error finalizando pausa en backend:', error);
+			}
+		}
 	},
 
-	detener() {
+	/**
+	 * Detener y guardar salida
+	 * Sincroniza con backend llamando a POST /api/horario/exit
+	 */
+	async detener() {
 		const now = Date.now();
 
+		const currentState = get(horarioState);
+		if (!currentState.isRunning) return;
+
+		let finalAccumulated = currentState.accumulatedMs;
+		if (currentState.startTime && !currentState.isPaused) {
+			finalAccumulated += now - currentState.startTime;
+		}
+
+		// Actualizar store local
 		horarioState.update((state) => {
-			if (!state.isRunning) return state;
-
-			let finalAccumulated = state.accumulatedMs;
-			if (state.startTime && !state.isPaused) {
-				finalAccumulated += now - state.startTime;
-			}
-
 			const newState: HorarioState = {
 				isRunning: false,
 				isPaused: false,
@@ -197,13 +320,38 @@ export const horario = {
 				pauseStart: null,
 				accumulatedMs: finalAccumulated,
 				fecha: state.fecha,
-				lastUpdate: now
+				lastUpdate: now,
+				horarioId: state.horarioId,
+				syncedWithBackend: false
 			};
 			saveToStorage(newState);
 			return newState;
 		});
+
+		// Intentar sincronizar con backend
+		if (browser) {
+			try {
+				const registro = await horarioService.registrarSalida({
+					fecha: currentState.fecha,
+					hora_salida: new Date(now).toISOString()
+				});
+
+				console.log('✅ Salida registrada en backend:', registro);
+
+				horarioState.update((state) => {
+					const newState = { ...state, syncedWithBackend: true };
+					saveToStorage(newState);
+					return newState;
+				});
+			} catch (error) {
+				console.error('❌ Error registrando salida en backend:', error);
+			}
+		}
 	},
 
+	/**
+	 * Actualizar timestamp (para autosave)
+	 */
 	actualizar() {
 		const now = Date.now();
 
@@ -217,6 +365,96 @@ export const horario = {
 		});
 	},
 
+	/**
+	 * Sincronizar con backend (para autosave)
+	 */
+	async sincronizar() {
+		const state = get(horarioState);
+		await syncSnapshot(state);
+	},
+
+	/**
+	 * Recuperar estado desde el backend
+	 */
+	async recuperarDesdeBackend() {
+		if (!browser) return;
+
+		const today = new Date().toISOString().split('T')[0];
+
+		try {
+			// Intentar obtener snapshot del backend
+			const snapshot = await horarioService.getSnapshot(today);
+
+			if (snapshot) {
+				console.log('✅ Snapshot recuperado del backend:', snapshot);
+
+				horarioState.update((state) => {
+					const newState: HorarioState = {
+						isRunning: snapshot.is_running,
+						isPaused: snapshot.is_paused,
+						startTime: snapshot.is_running && !snapshot.is_paused ? Date.now() : null,
+						pauseStart: snapshot.is_paused ? Date.now() : null,
+						accumulatedMs: snapshot.accumulated_ms,
+						fecha: today,
+						lastUpdate: Date.now(),
+						horarioId: null, // No viene en snapshot
+						syncedWithBackend: true
+					};
+					saveToStorage(newState);
+					return newState;
+				});
+
+				return;
+			}
+
+			// Si no hay snapshot, intentar obtener el registro de hoy
+			const registroHoy = await horarioService.getToday();
+
+			if (registroHoy) {
+				console.log('✅ Registro de hoy recuperado del backend:', registroHoy);
+
+				const now = Date.now();
+				let accumulatedMs = 0;
+
+				if (registroHoy.hora_entrada && registroHoy.is_running) {
+					const entrada = new Date(registroHoy.hora_entrada).getTime();
+					accumulatedMs = now - entrada;
+
+					// Restar pausas
+					if (registroHoy.pausas) {
+						for (const pausa of registroHoy.pausas) {
+							if (pausa.duracion_ms) {
+								accumulatedMs -= pausa.duracion_ms;
+							}
+						}
+					}
+				}
+
+				horarioState.update((state) => {
+					const newState: HorarioState = {
+						isRunning: registroHoy.is_running || false,
+						isPaused: registroHoy.is_paused || false,
+						startTime: registroHoy.is_running && !registroHoy.is_paused ? now : null,
+						pauseStart: registroHoy.is_paused ? now : null,
+						accumulatedMs,
+						fecha: today,
+						lastUpdate: now,
+						horarioId: registroHoy.id,
+						syncedWithBackend: true
+					};
+					saveToStorage(newState);
+					return newState;
+				});
+			}
+		} catch (error) {
+			console.error('❌ Error recuperando desde backend:', error);
+			// Si falla, usa el estado local
+		}
+	},
+
+	/**
+	 * Resetear estado
+	 */
 	reset() {
 		const today = new Date().toISOString().split('T')[0];
 		const newState: HorarioState = {
@@ -226,19 +464,28 @@ export const horario = {
 			pauseStart: null,
 			accumulatedMs: 0,
 			fecha: today,
-			lastUpdate: Date.now()
+			lastUpdate: Date.now(),
+			horarioId: null,
+			syncedWithBackend: false
 		};
 		horarioState.set(newState);
 		saveToStorage(newState);
 	}
 };
 
-// Autosave periódico
+// Autosave periódico (local + backend)
 if (browser) {
-	setInterval(() => {
+	setInterval(async () => {
 		const state = get(horarioState);
 		if (state.isRunning) {
+			// Guardar en localStorage
 			horario.actualizar();
+
+			// Sincronizar con backend
+			await horario.sincronizar();
 		}
 	}, AUTOSAVE_INTERVAL);
+
+	// Al cargar la página, intentar recuperar del backend
+	horario.recuperarDesdeBackend();
 }

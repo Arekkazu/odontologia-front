@@ -5,24 +5,25 @@
 	import { Card, Button, Badge } from '$lib/ui';
 	import {
 		getPacienteById,
-		listConsultasByPaciente,
-		listTratamientosByConsulta,
-		listPagosByTratamiento,
-		computeTratamientoSaldo,
-		getPacienteResumen,
+		getSaldoPendientePaciente,
 		type Paciente as PacienteModel,
-		type Consulta,
-		type Tratamiento,
-		type TratamientoConSaldo,
-		type Pago
+		type SaldoPendientePaciente
 	} from '$lib/services/api/pacientes';
+	import { getConsulta, type Consulta } from '$lib/services/api/consultas';
+	import {
+		listTratamientosConPagosByConsulta,
+		type TratamientoConPagos,
+		getEstadoLabel,
+		getEstadoBadgeVariant
+	} from '$lib/services/api/tratamientos';
+	import { listPagosByTratamiento, type Pago, getMetodoPagoLabel } from '$lib/services/api/pagos';
 
 	let pacienteId: number | null = null;
 	let paciente: PacienteModel | null = null;
 
 	let consultas: Consulta[] = [];
-	let tratamientos: TratamientoConSaldo[] = [];
-	let totalSaldoPaciente = 0;
+	let tratamientos: TratamientoConPagos[] = [];
+	let saldoPaciente: SaldoPendientePaciente | null = null;
 
 	// UI state
 	let loading = true;
@@ -81,16 +82,30 @@
 			const p = await getPacienteById(pacienteId);
 			paciente = p;
 
-			consultas = await listConsultasByPaciente(p.id);
-
-			// Obtener tratamientos de todas las consultas y calcular saldo
-			const tratamientosRaw: Tratamiento[] = consultas.flatMap((c) =>
-				listTratamientosByConsulta(c.id)
+			// Obtener consultas del paciente desde el backend
+			const todasLasConsultas = await import('$lib/services/api/consultas').then((m) =>
+				m.listConsultas()
 			);
-			tratamientos = tratamientosRaw.map(computeTratamientoSaldo);
+			consultas = todasLasConsultas.filter((c) => c.paciente_id === p.id);
 
-			const resumen = await getPacienteResumen(p.id);
-			totalSaldoPaciente = resumen?.totalSaldoPaciente ?? 0;
+			// Obtener todos los tratamientos de todas las consultas
+			const promesasTratamientos = consultas.map((c) => listTratamientosConPagosByConsulta(c.id));
+			const tratamientosPorConsulta = await Promise.all(promesasTratamientos);
+			tratamientos = tratamientosPorConsulta.flat();
+
+			// Obtener saldo pendiente real del backend
+			try {
+				saldoPaciente = await getSaldoPendientePaciente(p.id);
+			} catch (err) {
+				console.error('Error obteniendo saldo del paciente:', err);
+				// Fallback: calcular manualmente
+				saldoPaciente = {
+					costo_total: tratamientos.reduce((sum, t) => sum + (t.costo_total || 0), 0),
+					total_pagado: tratamientos.reduce((sum, t) => sum + (t.total_pagado || 0), 0),
+					saldo_pendiente: tratamientos.reduce((sum, t) => sum + (t.saldo_pendiente || 0), 0),
+					tratamientos_count: tratamientos.length
+				};
+			}
 		} catch (e) {
 			const err = e as Error;
 			error = err?.message || 'Error cargando datos del paciente';
@@ -169,11 +184,38 @@
 			<div class="saldo-total">
 				<div class="label">Saldo total pendiente</div>
 				<div class="value">
-					<Badge variant={estadoSaldoBadgeVariant(totalSaldoPaciente)} pill ariaLabel="Saldo total">
-						{formatMoney(totalSaldoPaciente)}
-					</Badge>
+					{#if saldoPaciente}
+						<Badge
+							variant={estadoSaldoBadgeVariant(saldoPaciente.saldo_pendiente)}
+							pill
+							ariaLabel="Saldo total"
+						>
+							{formatMoney(saldoPaciente.saldo_pendiente)}
+						</Badge>
+					{:else}
+						<Badge variant="neutral" pill ariaLabel="Saldo no disponible">—</Badge>
+					{/if}
 				</div>
 			</div>
+
+			{#if saldoPaciente}
+				<div class="resumen-financiero">
+					<div class="resumen-item">
+						<div class="resumen-label">Costo total tratamientos</div>
+						<div class="resumen-value">{formatMoney(saldoPaciente.costo_total)}</div>
+					</div>
+					<div class="resumen-item">
+						<div class="resumen-label">Total pagado</div>
+						<div class="resumen-value text-success">
+							{formatMoney(saldoPaciente.total_pagado)}
+						</div>
+					</div>
+					<div class="resumen-item">
+						<div class="resumen-label">Cantidad de tratamientos</div>
+						<div class="resumen-value">{saldoPaciente.tratamientos_count}</div>
+					</div>
+				</div>
+			{/if}
 
 			<div class="row-actions">
 				<Button variant="primary" ariaLabel="Nueva consulta" on:click={gotoNuevaConsulta}
@@ -256,6 +298,7 @@
 						<tr>
 							<th style="width:90px;">ID</th>
 							<th>Descripción</th>
+							<th style="width:120px;">Estado</th>
 							<th style="width:140px;">Fecha inicio</th>
 							<th style="width:140px;">Fecha fin</th>
 							<th style="width:140px;">Costo total</th>
@@ -267,7 +310,7 @@
 					<tbody>
 						{#if tratamientos.length === 0}
 							<tr>
-								<td colspan="8" class="text-soft">Sin tratamientos registrados.</td>
+								<td colspan="9" class="text-soft">Sin tratamientos registrados.</td>
 							</tr>
 						{:else}
 							{#each tratamientos as t (t.id)}
@@ -278,17 +321,22 @@
 											<div class="name">{t.descripcion}</div>
 										</div>
 									</td>
+									<td>
+										<Badge variant={getEstadoBadgeVariant(t.estado)} ariaLabel="Estado tratamiento">
+											{getEstadoLabel(t.estado)}
+										</Badge>
+									</td>
 									<td>{formatDay(t.fecha_inicio)}</td>
 									<td>{formatDay(t.fecha_fin)}</td>
 									<td>{formatMoney(t.costo_total)}</td>
-									<td>{formatMoney(t.totalPagos)}</td>
+									<td>{formatMoney(t.total_pagado)}</td>
 									<td>
 										<Badge
-											variant={estadoSaldoBadgeVariant(t.saldoPendiente)}
+											variant={estadoSaldoBadgeVariant(t.saldo_pendiente)}
 											pill
 											ariaLabel="Saldo tratamiento"
 										>
-											{formatMoney(t.saldoPendiente)}
+											{formatMoney(t.saldo_pendiente)}
 										</Badge>
 									</td>
 									<td>
@@ -323,7 +371,7 @@
 								</tr>
 								{#if openPagos[t.id]}
 									<tr>
-										<td colspan="8">
+										<td colspan="9">
 											<div class="pagos">
 												<div class="subheader">Pagos del tratamiento #{t.id}</div>
 												<table class="table">
@@ -340,7 +388,7 @@
 															<tr>
 																<td>{formatDay(p.fecha_pago)}</td>
 																<td>{formatMoney(p.monto)}</td>
-																<td>{p.metodo_pago || '—'}</td>
+																<td>{getMetodoPagoLabel(p.metodo_pago)}</td>
 																<td>{p.observaciones || '—'}</td>
 															</tr>
 														{:else}
@@ -427,6 +475,47 @@
 	.saldo-total .label {
 		font-size: var(--font-size-sm);
 		color: var(--color-text-soft);
+	}
+
+	.resumen-financiero {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: var(--space-3);
+		margin-top: var(--space-3);
+		padding: var(--space-3);
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+	}
+
+	@media (max-width: 768px) {
+		.resumen-financiero {
+			grid-template-columns: 1fr;
+		}
+	}
+
+	.resumen-item {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+	}
+
+	.resumen-label {
+		font-size: var(--font-size-xs);
+		color: var(--color-text-soft);
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.resumen-value {
+		font-size: var(--font-size-lg);
+		font-weight: 700;
+		color: var(--color-text);
+	}
+
+	.resumen-value.text-success {
+		color: var(--color-success);
 	}
 
 	.row-actions {

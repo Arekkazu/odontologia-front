@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { Card, Button, Input, Badge } from '$lib/ui';
+	import { Card, Button, Input } from '$lib/ui';
 	import { onMount } from 'svelte';
 	import { listConsultas, searchConsultas, type Consulta } from '$lib/services/api/consultas';
+	import { getPacienteById, type Paciente } from '$lib/services/api/pacientes';
 
 	// Estado de búsqueda y filtros
 	let searchQuery = '';
@@ -10,24 +11,40 @@
 	let filtroHasta = '';
 
 	// Datos
-	let todasConsultas: Consulta[] = [];
 	let filteredConsultas: Consulta[] = [];
 	let ultimasConsultas: Consulta[] = [];
+	let pacientesMap: Record<number, Paciente> = {};
 	let estadisticas = {
 		total: 0,
 		hoy: 0,
 		estaSemana: 0
 	};
 
-	// Estados derivados
-	$: (async () => {
+	// Helper para obtener nombre completo del paciente
+	function getNombrePaciente(pacienteId: number): string {
+		const paciente = pacientesMap[pacienteId];
+		if (!paciente) return `Paciente #${pacienteId}`;
+		return `${paciente.name} ${paciente.lastname}`.trim();
+	}
+
+	// Función para aplicar filtros
+	async function aplicarFiltros() {
 		filteredConsultas = await searchConsultas({
 			searchText: searchQuery,
 			desde: filtroDesde,
 			hasta: filtroHasta,
 			ordenar: filtroOrden
 		});
-	})();
+	}
+
+	// Reactividad: aplicar filtros cuando cambien
+	$: {
+		void searchQuery;
+		void filtroOrden;
+		void filtroDesde;
+		void filtroHasta;
+		aplicarFiltros();
+	}
 
 	// Acciones
 	function nuevaConsulta() {
@@ -45,24 +62,24 @@
 		filtroHasta = '';
 	}
 
-	function irAlPaciente(pacienteId: number) {
-		window.location.href = `/pacientes/${pacienteId}`;
-	}
-
-	// Formatear moneda
-	function formatMoney(amount: number): string {
-		return new Intl.NumberFormat('es-ES', {
-			style: 'currency',
-			currency: 'COP',
-			minimumFractionDigits: 0,
-			maximumFractionDigits: 2
-		}).format(amount);
-	}
-
 	// Cargar datos al montar el componente
 	onMount(async () => {
 		const all = await listConsultas();
-		todasConsultas = all;
+
+		// Cargar datos de pacientes
+		const pacienteIds = [...new Set(all.map((c) => c.paciente_id))];
+		const pacientesTemp: Record<number, Paciente> = {};
+		await Promise.all(
+			pacienteIds.map(async (id) => {
+				try {
+					const paciente = await getPacienteById(id);
+					pacientesTemp[id] = paciente;
+				} catch (err) {
+					console.error(`Error cargando paciente ${id}:`, err);
+				}
+			})
+		);
+		pacientesMap = pacientesTemp;
 
 		const now = new Date();
 		const todayStr = now.toDateString();
@@ -83,7 +100,7 @@
 				(a, b) =>
 					new Date(b.fecha_consulta ?? '').getTime() - new Date(a.fecha_consulta ?? '').getTime()
 			)
-			.slice(0, 5);
+			.slice(0, 4);
 	});
 </script>
 
@@ -91,41 +108,70 @@
 	<div class="header-row">
 		<h1 class="title">Consultas</h1>
 		<div class="actions">
-			<Button variant="primary" on:click={nuevaConsulta}>Agregar consulta</Button>
+			<Button variant="primary" on:click={nuevaConsulta} ariaLabel="Agregar nueva consulta">
+				Agregar consulta
+			</Button>
 		</div>
 	</div>
 
 	<!-- Tarjetas de estadísticas -->
 	<div class="stats-grid">
-		<Card title="Total de consultas" hoverable>
+		<Card
+			title="Total de consultas"
+			subtitle=""
+			className=""
+			ariaLabel="Total de consultas"
+			hoverable
+		>
 			<div class="stat-value">{estadisticas.total}</div>
 			<p class="stat-label">registradas en el sistema</p>
 		</Card>
 
-		<Card title="Consultas hoy" hoverable>
+		<Card title="Consultas hoy" subtitle="" className="" ariaLabel="Consultas de hoy" hoverable>
 			<div class="stat-value">{estadisticas.hoy}</div>
 			<p class="stat-label">realizadas este día</p>
 		</Card>
 
-		<Card title="Esta semana" hoverable>
+		<Card
+			title="Esta semana"
+			subtitle=""
+			className=""
+			ariaLabel="Consultas de esta semana"
+			hoverable
+		>
 			<div class="stat-value">{estadisticas.estaSemana}</div>
 			<p class="stat-label">últimos 7 días</p>
 		</Card>
 
-		<Card title="Últimas registradas" hoverable>
+		<Card
+			title="Últimas registradas"
+			subtitle=""
+			className=""
+			ariaLabel="Últimas consultas registradas"
+			hoverable
+		>
 			<div class="stat-value">{ultimasConsultas.length}</div>
 			<p class="stat-label">en los últimos registros</p>
 		</Card>
 	</div>
 
 	<!-- Sección de búsqueda y filtros -->
-	<Card title="Búsqueda y filtros" hoverable>
+	<Card
+		title="Búsqueda y filtros"
+		subtitle=""
+		className=""
+		ariaLabel="Filtros de búsqueda"
+		hoverable
+	>
 		<div class="filters">
 			<Input
 				type="search"
 				placeholder="Buscar por paciente, motivo o ID"
 				bind:value={searchQuery}
 				description="Escribe para filtrar consultas rápidamente."
+				label=""
+				name="search"
+				id="search-consultas"
 			/>
 
 			<div class="filter-row">
@@ -148,7 +194,14 @@
 					<input type="date" bind:value={filtroHasta} class="input" />
 				</label>
 
-				<Button variant="outline" size="sm" on:click={limpiarFiltros}>Limpiar filtros</Button>
+				<Button
+					variant="outline"
+					size="sm"
+					on:click={limpiarFiltros}
+					ariaLabel="Limpiar filtros de búsqueda"
+				>
+					Limpiar filtros
+				</Button>
 			</div>
 		</div>
 	</Card>
@@ -158,14 +211,15 @@
 		<Card
 			title="Últimas consultas"
 			subtitle={`${ultimasConsultas.length} consultas recientes`}
+			className=""
+			ariaLabel="Últimas consultas recientes"
 			hoverable
 		>
 			<div class="tabla-wrapper">
 				<table class="table">
 					<thead>
 						<tr>
-							<th style="width: 90px;">ID</th>
-							<th>Paciente ID</th>
+							<th>Paciente</th>
 							<th>Motivo</th>
 							<th>Diagnóstico</th>
 							<th style="width: 160px;">Fecha</th>
@@ -173,26 +227,36 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each ultimasConsultas as c}
+						{#each ultimasConsultas as c (c.id)}
 							<tr>
-								<td>#{c.id}</td>
-								<td>{c.paciente_id}</td>
+								<td>
+									<div class="col-main">
+										<span class="name">{getNombrePaciente(c.paciente_id)}</span>
+										<span class="text-soft" style="font-size: 0.8em;">#{c.id}</span>
+									</div>
+								</td>
 								<td>{c.motivo || '—'}</td>
 								<td>{c.diagnostico || '—'}</td>
 								<td class="text-soft">
-									{c.fecha_consulta ? new Date(c.fecha_consulta).toLocaleString() : '—'}
+									{c.fecha_consulta
+										? new Date(c.fecha_consulta).toLocaleString('es-ES', {
+												year: 'numeric',
+												month: 'short',
+												day: 'numeric',
+												hour: '2-digit',
+												minute: '2-digit'
+											})
+										: '—'}
 								</td>
 								<td>
 									<div class="row-actions">
-										<Button variant="secondary" size="sm" on:click={() => verConsulta(c.id)}>
-											Ver
-										</Button>
 										<Button
-											variant="outline"
+											variant="secondary"
 											size="sm"
-											on:click={() => irAlPaciente(c.paciente_id)}
+											on:click={() => verConsulta(c.id)}
+											ariaLabel={`Ver detalles de consulta ${c.id}`}
 										>
-											Paciente
+											Ver detalles
 										</Button>
 									</div>
 								</td>
@@ -208,46 +272,59 @@
 	<Card
 		title="Todas las consultas"
 		subtitle={`Total: ${filteredConsultas.length} consulta${filteredConsultas.length !== 1 ? 's' : ''}`}
+		className=""
+		ariaLabel="Listado completo de consultas"
 		hoverable
 	>
 		<div class="tabla-wrapper">
 			<table class="table">
 				<thead>
 					<tr>
-						<th style="width: 90px;">ID</th>
-						<th>Paciente ID</th>
-						<th>Motivo</th>
+						<th>Paciente</th>
+						<th>Motivo de consulta</th>
 						<th>Diagnóstico</th>
 						<th style="width: 160px;">Fecha</th>
-						<th style="width: 180px;">Acciones</th>
+						<th style="width: 140px;">Acciones</th>
 					</tr>
 				</thead>
 				<tbody>
 					{#if filteredConsultas.length === 0}
 						<tr>
-							<td colspan="8" class="text-soft">No hay consultas que coincidan con tus filtros.</td>
+							<td colspan="5" class="text-soft text-center"
+								>No hay consultas que coincidan con tus filtros.</td
+							>
 						</tr>
 					{:else}
-						{#each filteredConsultas as c}
+						{#each filteredConsultas as c (c.id)}
 							<tr>
-								<td>#{c.id}</td>
-								<td>{c.paciente_id}</td>
+								<td>
+									<div class="col-main">
+										<span class="name">{getNombrePaciente(c.paciente_id)}</span>
+										<span class="text-soft" style="font-size: 0.8em;">Consulta #{c.id}</span>
+									</div>
+								</td>
 								<td>{c.motivo || '—'}</td>
 								<td>{c.diagnostico || '—'}</td>
 								<td class="text-soft">
-									{c.fecha_consulta ? new Date(c.fecha_consulta).toLocaleString() : '—'}
+									{c.fecha_consulta
+										? new Date(c.fecha_consulta).toLocaleString('es-ES', {
+												year: 'numeric',
+												month: 'short',
+												day: 'numeric',
+												hour: '2-digit',
+												minute: '2-digit'
+											})
+										: '—'}
 								</td>
 								<td>
 									<div class="row-actions">
-										<Button variant="secondary" size="sm" on:click={() => verConsulta(c.id)}>
-											Ver
-										</Button>
 										<Button
-											variant="outline"
+											variant="secondary"
 											size="sm"
-											on:click={() => irAlPaciente(c.paciente_id)}
+											on:click={() => verConsulta(c.id)}
+											ariaLabel={`Ver detalles de consulta ${c.id}`}
 										>
-											Paciente
+											Ver detalles
 										</Button>
 									</div>
 								</td>
@@ -337,8 +414,15 @@
 		border-radius: var(--radius-sm);
 	}
 
+	.col-main {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+	}
+
 	.col-main .name {
 		font-weight: 600;
+		color: var(--color-text);
 	}
 
 	.row-actions {

@@ -3,11 +3,39 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { horario, tiempoActual, formatTime, formatTimeShort } from '$lib/stores/horario';
 	import { browser } from '$app/environment';
+	import {
+		horarioService,
+		type CalendarioMensual,
+		type ResumenMensual
+	} from '$lib/services/api/horario';
 
+	// ============================================
+	// ESTADO LOCAL
+	// ============================================
 	let displayTime = '0h 00m 00s';
 	let tickInterval: number | null = null;
 
-	// Actualizar display cada segundo
+	// Estados de carga
+	let loadingCalendar = false;
+	let loadingDashboard = false;
+	let errorCalendar: string | null = null;
+	let errorDashboard: string | null = null;
+
+	// Datos del backend
+	let calendarioData: CalendarioMensual | null = null;
+	let dashboardData: {
+		horario: {
+			hoy_ms: number;
+			total_mes_ms: number;
+			alerta_8h: boolean;
+			alerta_tiempo_extra: boolean;
+		};
+		resumen_mes: ResumenMensual;
+	} | null = null;
+
+	// ============================================
+	// CRONÓMETRO
+	// ============================================
 	function updateDisplay() {
 		tiempoActual.subscribe((ms) => {
 			displayTime = formatTime(ms);
@@ -27,42 +55,192 @@
 		}
 	}
 
-	function handlePausar() {
-		horario.pausar();
-		if (browser) {
-			console.log('⏸️ Cronómetro pausado');
+	async function handleIniciar() {
+		try {
+			await horario.iniciar();
+			if (browser) {
+				console.log('✅ Jornada iniciada');
+			}
+			// Recargar dashboard
+			await loadDashboard();
+		} catch (error) {
+			console.error('Error iniciando jornada:', error);
+			alert('Error al iniciar jornada. Por favor intenta de nuevo.');
 		}
 	}
 
-	function handleReanudar() {
-		horario.reanudar();
-		if (browser) {
-			console.log('▶️ Cronómetro reanudado');
+	async function handlePausar() {
+		try {
+			await horario.pausar();
+			if (browser) {
+				console.log('⏸️ Cronómetro pausado');
+			}
+		} catch (error) {
+			console.error('Error pausando:', error);
 		}
 	}
 
-	function handleDetener() {
+	async function handleReanudar() {
+		try {
+			await horario.reanudar();
+			if (browser) {
+				console.log('▶️ Cronómetro reanudado');
+			}
+		} catch (error) {
+			console.error('Error reanudando:', error);
+		}
+	}
+
+	async function handleDetener() {
 		const ok = confirm('¿Guardar salida y finalizar jornada de hoy?');
 		if (!ok) return;
 
-		horario.detener();
-		if (browser) {
-			console.log('⏹️ Jornada finalizada:', displayTime);
+		try {
+			await horario.detener();
+			if (browser) {
+				console.log('⏹️ Jornada finalizada:', displayTime);
+			}
+			alert(`Jornada guardada: ${displayTime}`);
+			// Recargar datos
+			await loadDashboard();
+			await loadCalendar();
+		} catch (error) {
+			console.error('Error deteniendo:', error);
+			alert('Error al guardar salida. Por favor intenta de nuevo.');
 		}
-		alert(`Jornada guardada: ${displayTime}`);
 	}
 
-	onMount(() => {
+	// ============================================
+	// CALENDARIO MENSUAL
+	// ============================================
+	let currentDate = new Date();
+
+	async function loadCalendar() {
+		loadingCalendar = true;
+		errorCalendar = null;
+		try {
+			const year = currentDate.getFullYear();
+			const month = currentDate.getMonth() + 1; // getMonth() es 0-indexed
+			calendarioData = await horarioService.getCalendarioMensual(year, month);
+		} catch (error) {
+			errorCalendar = error instanceof Error ? error.message : 'Error cargando calendario';
+			console.error('Error cargando calendario:', error);
+		} finally {
+			loadingCalendar = false;
+		}
+	}
+
+	async function prevMonth() {
+		currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
+		await loadCalendar();
+	}
+
+	async function nextMonth() {
+		currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1);
+		await loadCalendar();
+	}
+
+	// Construir días del calendario con datos reales
+	$: monthDays =
+		calendarioData?.days.map((dia) => {
+			const [year, month, day] = dia.date.split('-').map(Number);
+			return {
+				date: new Date(year, month - 1, day),
+				label: String(day),
+				type: dia.type,
+				workedMs: dia.worked_ms,
+				dateString: dia.date
+			};
+		}) || [];
+
+	// Usar resumen del backend
+	$: resumenMes = calendarioData?.summary
+		? {
+				total: formatTimeShort(calendarioData.summary.total_ms),
+				normales: formatTimeShort(calendarioData.summary.normales_ms),
+				extras: formatTimeShort(calendarioData.summary.extras_ms),
+				diasTrabajados: calendarioData.summary.dias_trabajados,
+				promedioDiario: formatTimeShort(calendarioData.summary.promedio_diario_ms)
+			}
+		: {
+				total: '0h 00m',
+				normales: '0h 00m',
+				extras: '0h 00m',
+				diasTrabajados: 0,
+				promedioDiario: '0h 00m'
+			};
+
+	// ============================================
+	// DASHBOARD
+	// ============================================
+	async function loadDashboard() {
+		loadingDashboard = true;
+		errorDashboard = null;
+		try {
+			dashboardData = await horarioService.getHorarioDashboard();
+		} catch (error) {
+			errorDashboard = error instanceof Error ? error.message : 'Error cargando dashboard';
+			console.error('Error cargando dashboard:', error);
+		} finally {
+			loadingDashboard = false;
+		}
+	}
+
+	$: hoyTiempoBackend = dashboardData ? formatTimeShort(dashboardData.horario.hoy_ms) : '0h 00m';
+	$: totalMesBackend = dashboardData
+		? formatTimeShort(dashboardData.horario.total_mes_ms)
+		: '0h 00m';
+	$: alerta8h = dashboardData?.horario.alerta_8h || false;
+	$: alertaTiempoExtra = dashboardData?.horario.alerta_tiempo_extra || false;
+
+	// ============================================
+	// VER DETALLE DE DÍA
+	// ============================================
+	async function verDetalleDia(fecha: string) {
+		try {
+			const dia = await horarioService.getDia(fecha);
+			if (dia) {
+				const entrada = dia.hora_entrada
+					? new Date(dia.hora_entrada).toLocaleTimeString('es-ES')
+					: 'No registrada';
+				const salida = dia.hora_salida
+					? new Date(dia.hora_salida).toLocaleTimeString('es-ES')
+					: 'No registrada';
+				const total = dia.total_ms ? formatTimeShort(dia.total_ms) : '0h 00m';
+
+				alert(`Detalle del ${fecha}
+
+Entrada: ${entrada}
+Salida: ${salida}
+Total trabajado: ${total}
+Tipo: ${dia.tipo}
+
+${dia.notas || ''}`);
+			} else {
+				alert(`No hay registro para el día ${fecha}`);
+			}
+		} catch (error) {
+			console.error('Error obteniendo detalle:', error);
+			alert('Error al cargar los detalles del día');
+		}
+	}
+
+	// ============================================
+	// LIFECYCLE
+	// ============================================
+	onMount(async () => {
 		startTicking();
 
-		// Log para debug
+		// Cargar datos del backend
+		await Promise.all([loadCalendar(), loadDashboard()]);
+
 		if (browser) {
-			console.log('🕐 Cronómetro iniciado. Estado actual:', {
+			console.log('🕐 Página de horario cargada. Estado actual:', {
 				isRunning: $horario.isRunning,
 				isPaused: $horario.isPaused,
 				fecha: $horario.fecha,
 				accumulatedMs: $horario.accumulatedMs,
-				localStorage: localStorage.getItem('horario_cronometro')
+				syncedWithBackend: $horario.syncedWithBackend
 			});
 		}
 	});
@@ -70,79 +248,14 @@
 	onDestroy(() => {
 		stopTicking();
 		if (browser) {
-			console.log('👋 Saliendo de página de horario, estado guardado en localStorage');
+			console.log('👋 Saliendo de página de horario');
 		}
 	});
 
-	// Calendario mensual (placeholder)
-	let currentDate = new Date();
-	let monthDays: Array<{
-		date: Date;
-		label: string;
-		type: 'normal' | 'extra' | 'none';
-		workedMs: number;
-	}> = [];
-
+	// Helper para formatear
 	function computeDisplay(ms: number): string {
 		return formatTimeShort(ms);
 	}
-
-	function buildMonth(date: Date) {
-		const year = date.getFullYear();
-		const month = date.getMonth();
-		const lastDay = new Date(year, month + 1, 0);
-		const totalDays = lastDay.getDate();
-
-		const days: typeof monthDays = [];
-		for (let d = 1; d <= totalDays; d++) {
-			const dayDate = new Date(year, month, d);
-
-			// Placeholder: lógica de ejemplo
-			const weekend = dayDate.getDay() === 0 || dayDate.getDay() === 6;
-			const workedMs = weekend ? 0 : Math.floor(Math.random() * 5 * 60 * 60 * 1000);
-			const type: 'normal' | 'extra' | 'none' =
-				workedMs === 0 ? 'none' : workedMs > 8 * 60 * 60 * 1000 ? 'extra' : 'normal';
-
-			days.push({
-				date: dayDate,
-				label: String(d),
-				type,
-				workedMs
-			});
-		}
-		monthDays = days;
-	}
-
-	function prevMonth() {
-		currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
-		buildMonth(currentDate);
-	}
-
-	function nextMonth() {
-		currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1);
-		buildMonth(currentDate);
-	}
-
-	$: buildMonth(currentDate);
-
-	// Resumen del mes (placeholder)
-	$: resumenMes = (() => {
-		const totalMs = monthDays.reduce((sum, d) => sum + d.workedMs, 0);
-		const extrasMs = monthDays
-			.filter((d) => d.type === 'extra')
-			.reduce((sum, d) => sum + d.workedMs, 0);
-		const normalesMs = totalMs - extrasMs;
-		const diasTrabajados = monthDays.filter((d) => d.workedMs > 0).length;
-		const promedioDiarioMs = diasTrabajados > 0 ? Math.floor(totalMs / diasTrabajados) : 0;
-
-		return {
-			total: computeDisplay(totalMs),
-			normales: computeDisplay(normalesMs),
-			extras: computeDisplay(extrasMs),
-			diasTrabajados,
-			promedioDiario: computeDisplay(promedioDiarioMs)
-		};
-	})();
 </script>
 
 <section class="horario">
@@ -151,41 +264,63 @@
 		<div class="cronometro">
 			<div class="indicadores">
 				<div class="contador">
-					<span class="label">Hoy:</span>
+					<span class="label">Hoy (cronómetro):</span>
 					<span class="value">{displayTime}</span>
 				</div>
+				{#if dashboardData}
+					<div class="contador-backend">
+						<span class="label-small">Backend: {hoyTiempoBackend}</span>
+						<span class="label-small">Total mes: {totalMesBackend}</span>
+					</div>
+				{/if}
 				<div class="estado">
 					{#if $horario.isRunning && !$horario.isPaused}
 						<Badge variant="success" pill>Activo</Badge>
 					{:else if $horario.isPaused}
 						<Badge variant="info" pill>Pausado</Badge>
 					{:else}
-						<Badge variant="neutral" pill>Finalizado</Badge>
+						<Badge variant="neutral" pill>No iniciado</Badge>
+					{/if}
+					{#if $horario.syncedWithBackend}
+						<Badge variant="success">✓ Sincronizado</Badge>
+					{:else if $horario.isRunning}
+						<Badge variant="warning">⚠ No sincronizado</Badge>
 					{/if}
 				</div>
 			</div>
+
+			{#if alerta8h || alertaTiempoExtra}
+				<div class="alertas">
+					{#if alerta8h}
+						<Badge variant="info">⏰ Completarás 8h en breve</Badge>
+					{/if}
+					{#if alertaTiempoExtra}
+						<Badge variant="warning">⚠️ Tienes tiempo extra este mes</Badge>
+					{/if}
+				</div>
+			{/if}
+
 			<div class="acciones">
-				<Button
-					variant="outline"
-					size="sm"
-					on:click={handlePausar}
-					disabled={!$horario.isRunning || $horario.isPaused}
-				>
-					Pausar
-				</Button>
-				<Button
-					variant="outline"
-					size="sm"
-					on:click={handleReanudar}
-					disabled={!$horario.isRunning || !$horario.isPaused}
-				>
-					Reanudar
-				</Button>
-				<Button variant="danger" size="sm" on:click={handleDetener} disabled={!$horario.isRunning}>
-					Guardar salida
-				</Button>
+				{#if !$horario.isRunning}
+					<Button variant="primary" size="sm" on:click={handleIniciar}>Iniciar jornada</Button>
+				{:else}
+					<Button variant="outline" size="sm" on:click={handlePausar} disabled={$horario.isPaused}>
+						Pausar
+					</Button>
+					<Button
+						variant="outline"
+						size="sm"
+						on:click={handleReanudar}
+						disabled={!$horario.isPaused}
+					>
+						Reanudar
+					</Button>
+					<Button variant="danger" size="sm" on:click={handleDetener}>Guardar salida</Button>
+				{/if}
 			</div>
-			<div class="autosave text-soft">💾 Guardado automático cada minuto</div>
+			<div class="autosave text-soft">
+				💾 Guardado automático cada minuto {$horario.isRunning ? '(local + backend)' : ''}
+			</div>
 		</div>
 	</Card>
 
@@ -193,8 +328,11 @@
 	<Card title="Registro diario" subtitle="Información de la jornada" hoverable>
 		<div class="registro-diario">
 			<div class="info-message">
-				<p>⏰ El registro de horario inicia automáticamente al iniciar sesión</p>
-				<p>💾 Tu tiempo se guarda automáticamente</p>
+				<p>⏰ Inicia tu jornada con el botón "Iniciar jornada"</p>
+				<p>💾 Tu tiempo se guarda automáticamente en local y en el servidor</p>
+				{#if $horario.horarioId}
+					<p>🆔 ID de registro: #{$horario.horarioId}</p>
+				{/if}
 			</div>
 			<div class="row">
 				<div class="field">
@@ -222,6 +360,7 @@
 			<div class="row">
 				<Badge variant="success">Día normal</Badge>
 				<Badge variant="warning">Hora extra</Badge>
+				<Badge variant="neutral">No trabajado</Badge>
 			</div>
 		</div>
 	</Card>
@@ -229,70 +368,97 @@
 	<!-- Panel Calendario -->
 	<Card
 		title="Calendario mensual"
-		subtitle={`${currentDate.toLocaleString('default', { month: 'long' })} ${currentDate.getFullYear()}`}
+		subtitle={`${currentDate.toLocaleString('es-ES', { month: 'long' })} ${currentDate.getFullYear()}`}
 		hoverable
 	>
 		<div class="calendar-controls">
-			<Button variant="outline" size="sm" on:click={prevMonth}>← Mes anterior</Button>
-			<Button variant="outline" size="sm" on:click={nextMonth}>Mes siguiente →</Button>
+			<Button variant="outline" size="sm" on:click={prevMonth} disabled={loadingCalendar}>
+				← Mes anterior
+			</Button>
+			<Button variant="outline" size="sm" on:click={nextMonth} disabled={loadingCalendar}>
+				Mes siguiente →
+			</Button>
 		</div>
-		<div class="calendar-legend">
-			<Badge variant="success" pill>Normal (verde)</Badge>
-			<Badge variant="warning" pill>Extra (naranja)</Badge>
-			<Badge variant="neutral" pill>No trabajado (gris)</Badge>
-		</div>
-		<div class="calendar-grid">
-			{#each monthDays as d (d.date.getTime())}
-				<div class={`calendar-day ${d.type}`}>
-					<div class="day-header">
-						<span class="day-number">{d.label}</span>
-						{#if d.type === 'extra'}
-							<span class="extra-indicator">EX</span>
-						{/if}
+
+		{#if loadingCalendar}
+			<div class="loading-message">Cargando calendario...</div>
+		{:else if errorCalendar}
+			<div class="error-message">
+				<p>{errorCalendar}</p>
+				<Button variant="primary" size="sm" on:click={loadCalendar}>Reintentar</Button>
+			</div>
+		{:else if monthDays.length === 0}
+			<div class="empty-message">No hay datos para este mes</div>
+		{:else}
+			<div class="calendar-legend">
+				<Badge variant="success" pill>Normal (verde)</Badge>
+				<Badge variant="warning" pill>Extra (naranja)</Badge>
+				<Badge variant="neutral" pill>No trabajado (gris)</Badge>
+			</div>
+			<div class="calendar-grid">
+				{#each monthDays as d (d.dateString)}
+					<div class={`calendar-day ${d.type}`}>
+						<div class="day-header">
+							<span class="day-number">{d.label}</span>
+							{#if d.type === 'extra'}
+								<span class="extra-indicator">EX</span>
+							{/if}
+						</div>
+						<div class="day-body">
+							{#if d.workedMs > 0}
+								<span class="worked">{computeDisplay(d.workedMs)}</span>
+							{:else}
+								<span class="worked text-soft">—</span>
+							{/if}
+						</div>
+						<div class="day-actions">
+							<Button variant="outline" size="sm" on:click={() => verDetalleDia(d.dateString)}>
+								Ver detalle
+							</Button>
+						</div>
 					</div>
-					<div class="day-body">
-						{#if d.workedMs > 0}
-							<span class="worked">{computeDisplay(d.workedMs)}</span>
-						{:else}
-							<span class="worked text-soft">—</span>
-						{/if}
-					</div>
-					<div class="day-actions">
-						<Button variant="outline" size="sm">Ver detalle</Button>
-					</div>
-				</div>
-			{/each}
-		</div>
+				{/each}
+			</div>
+		{/if}
 	</Card>
 
 	<!-- Panel Resumen -->
 	<Card title="Resumen del mes" hoverable>
-		<div class="resumen-grid">
-			<div class="resumen-item">
-				<div class="label">Total</div>
-				<div class="value">{resumenMes.total}</div>
+		{#if loadingDashboard}
+			<div class="loading-message">Cargando resumen...</div>
+		{:else if errorDashboard}
+			<div class="error-message">
+				<p>{errorDashboard}</p>
+				<Button variant="primary" size="sm" on:click={loadDashboard}>Reintentar</Button>
 			</div>
-			<div class="resumen-item">
-				<div class="label">Normales</div>
-				<div class="value text-success">{resumenMes.normales}</div>
+		{:else}
+			<div class="resumen-grid">
+				<div class="resumen-item">
+					<div class="label">Total</div>
+					<div class="value">{resumenMes.total}</div>
+				</div>
+				<div class="resumen-item">
+					<div class="label">Normales</div>
+					<div class="value text-success">{resumenMes.normales}</div>
+				</div>
+				<div class="resumen-item">
+					<div class="label">Extras</div>
+					<div class="value text-warning">{resumenMes.extras}</div>
+				</div>
+				<div class="resumen-item">
+					<div class="label">Días trabajados</div>
+					<div class="value">{resumenMes.diasTrabajados}</div>
+				</div>
+				<div class="resumen-item">
+					<div class="label">Promedio diario</div>
+					<div class="value">{resumenMes.promedioDiario}</div>
+				</div>
 			</div>
-			<div class="resumen-item">
-				<div class="label">Extras</div>
-				<div class="value text-warning">{resumenMes.extras}</div>
+			<div class="resumen-actions">
+				<Button variant="secondary">Exportar reporte</Button>
+				<Button variant="outline" on:click={loadDashboard}>🔄 Actualizar</Button>
 			</div>
-			<div class="resumen-item">
-				<div class="label">Días trabajados</div>
-				<div class="value">{resumenMes.diasTrabajados}</div>
-			</div>
-			<div class="resumen-item">
-				<div class="label">Promedio diario</div>
-				<div class="value">{resumenMes.promedioDiario}</div>
-			</div>
-		</div>
-		<div class="resumen-actions">
-			<Button variant="secondary">Exportar reporte</Button>
-			<Button variant="outline">Ver meses anteriores</Button>
-		</div>
+		{/if}
 	</Card>
 </section>
 
@@ -325,6 +491,26 @@
 		font-weight: 800;
 		font-size: var(--font-size-2xl);
 		color: var(--color-brand-600);
+	}
+	.contador-backend {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+	}
+	.label-small {
+		font-size: var(--font-size-xs);
+		color: var(--color-text-soft);
+	}
+	.estado {
+		display: flex;
+		gap: var(--space-2);
+		align-items: center;
+		flex-wrap: wrap;
+	}
+	.alertas {
+		display: flex;
+		gap: var(--space-2);
+		flex-wrap: wrap;
 	}
 	.acciones {
 		display: inline-flex;
@@ -495,6 +681,23 @@
 		display: inline-flex;
 		gap: var(--space-2);
 		flex-wrap: wrap;
+	}
+
+	/* Estados */
+	.loading-message,
+	.error-message,
+	.empty-message {
+		padding: var(--space-4);
+		text-align: center;
+		color: var(--color-text-soft);
+	}
+
+	.error-message {
+		color: var(--color-danger);
+	}
+
+	.error-message p {
+		margin-bottom: var(--space-3);
 	}
 
 	.text-soft {

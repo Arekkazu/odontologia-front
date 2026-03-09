@@ -1,7 +1,7 @@
 /**
  * Servicio de Pacientes y Consultas conectado al backend.
  * - Usa endpoints reales descritos en infobackend.md.
- * - Mantiene stubs locales para tratamientos y pagos (aún sin backend).
+ * - Mantiene stubs locales para tratamientos y pagos (deprecados, usar servicios específicos).
  *
  * Endpoints backend relevantes:
  * - POST /auth/login, /auth/logout (ya cubiertos en auth.ts)
@@ -9,6 +9,7 @@
  *   - POST /api/patient/register
  *   - GET  /api/patient/:id
  *   - PUT  /api/patient/:id
+ *   - GET  /api/patient/:id/saldo-pendiente
  * - Consultas:
  *   - POST /api/consultas
  *   - GET  /api/consultas
@@ -18,8 +19,7 @@
  *
  * Notas:
  * - Todas las llamadas usan credentials: "include" vía apiClient.
- * - Los stubs de tratamientos/pagos se mantienen en memoria para no romper la UI actual;
- *   debes migrarlos a endpoints reales cuando estén disponibles.
+ * - Para tratamientos y pagos, usar los servicios específicos: tratamientos.ts y pagos.ts
  */
 
 import { apiClient } from './http';
@@ -121,6 +121,13 @@ export interface PacienteResumen {
 	paciente: Paciente;
 	tratamientos: TratamientoConSaldo[];
 	totalSaldoPaciente: number;
+}
+
+export interface SaldoPendientePaciente {
+	costo_total: number; // Suma de TODOS sus tratamientos
+	total_pagado: number; // Suma de TODOS sus pagos
+	saldo_pendiente: number; // Diferencia
+	tratamientos_count: number; // Total de tratamientos del paciente
 }
 
 /* -------------------------------------------------------------------------- */
@@ -276,6 +283,22 @@ export async function listConsultas(): Promise<Consulta[]> {
 export async function listConsultasByPaciente(paciente_id: number): Promise<Consulta[]> {
 	const all = await listConsultas();
 	return all.filter((c) => c.paciente_id === paciente_id);
+}
+
+/**
+ * Obtener el saldo pendiente total de un paciente
+ * Endpoint: GET /api/patient/:id/saldo-pendiente
+ */
+export async function getSaldoPendientePaciente(
+	paciente_id: number
+): Promise<SaldoPendientePaciente> {
+	const resp = await apiClient.get<SaldoPendientePaciente>(
+		`patient/${paciente_id}/saldo-pendiente`
+	);
+	if (!resp.ok) {
+		throw new Error(`No se pudo obtener el saldo del paciente ${paciente_id}`);
+	}
+	return unwrapPayload<SaldoPendientePaciente>(resp.data);
 }
 
 /* -------------------------------------------------------------------------- */

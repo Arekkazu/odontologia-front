@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Card, Button, Input, Badge } from '$lib/ui';
 	import { onMount } from 'svelte';
-	import { listPacientes, createTratamiento } from '$lib/services/api/pacientes';
+	import { listPacientes } from '$lib/services/api/pacientes';
 	import { createConsulta } from '$lib/services/api/consultas';
 	import type { Paciente } from '$lib/services/api/pacientes';
 
@@ -10,8 +10,6 @@
 	let motivo = '';
 	let diagnostico = '';
 	let observaciones = '';
-	let descripcionTratamiento = '';
-	let costoTratamiento = '';
 
 	let loading = false;
 	let loadingPacientes = true;
@@ -66,15 +64,6 @@
 				observaciones: observaciones.trim() || undefined,
 				fecha_consulta: new Date().toISOString()
 			});
-
-			// Crear tratamiento si se especifica
-			if (descripcionTratamiento.trim() && costoTratamiento) {
-				createTratamiento({
-					consulta_id: consulta.id,
-					descripcion: descripcionTratamiento.trim(),
-					costo_total: parseFloat(costoTratamiento) || 0
-				});
-			}
 
 			success = '✓ Consulta creada exitosamente';
 
@@ -216,39 +205,6 @@
 					<p class="help">Observaciones o notas relevantes.</p>
 				</div>
 
-				<!-- Separador -->
-				<hr class="form-divider" />
-
-				<p class="form-subtitle">Datos del tratamiento (opcional)</p>
-
-				<!-- Descripción del tratamiento -->
-				<div class="form-group">
-					<label for="descripcion-trat" class="label">Descripción del tratamiento</label>
-					<Input
-						id="descripcion-trat"
-						type="text"
-						placeholder="Ej: Endodoncia, Limpieza profunda"
-						bind:value={descripcionTratamiento}
-						disabled={loading}
-						description="Si deseas registrar un tratamiento en esta consulta."
-					/>
-				</div>
-
-				<!-- Costo del tratamiento -->
-				<div class="form-group">
-					<label for="costo-trat" class="label">Costo del tratamiento ($)</label>
-					<Input
-						id="costo-trat"
-						type="number"
-						placeholder="0.00"
-						bind:value={costoTratamiento}
-						disabled={loading}
-						step="0.01"
-						min="0"
-						description="Costo total del tratamiento en COP."
-					/>
-				</div>
-
 				<!-- Botones -->
 				<div class="form-actions">
 					<Button
@@ -303,7 +259,7 @@
 					<li>Siempre selecciona el paciente correcto</li>
 					<li>Describe el motivo de forma clara</li>
 					<li>Incluye diagnóstico para el historial</li>
-					<li>Puedes agregar tratamiento después si deseas</li>
+					<li>Después puedes registrar tratamientos en el detalle de la consulta</li>
 				</ul>
 			</div>
 		</Card>

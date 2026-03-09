@@ -11,6 +11,13 @@
  */
 import { apiClient } from './http';
 
+export interface ResumenFinanciero {
+	costo_total: number;
+	total_pagado: number;
+	saldo_pendiente: number;
+	tratamientos_count: number;
+}
+
 export interface Consulta {
 	id: number;
 	paciente_id: number;
@@ -18,6 +25,7 @@ export interface Consulta {
 	diagnostico: string;
 	fecha_consulta?: string; // datetime ISO
 	observaciones?: string | null;
+	resumen_financiero?: ResumenFinanciero; // Nuevo: Resumen automático del backend
 }
 
 export interface CreateConsultaInput {
@@ -59,8 +67,12 @@ function unwrapPayload<T>(value: unknown): T {
 }
 
 function errorFromResponse(resp: { data: unknown; status: number }, fallback: string): Error {
-	if (typeof resp.data === 'object' && resp.data !== null && 'message' in (resp.data as any)) {
-		return new Error(String((resp.data as any).message));
+	if (
+		typeof resp.data === 'object' &&
+		resp.data !== null &&
+		'message' in (resp.data as Record<string, unknown>)
+	) {
+		return new Error(String((resp.data as Record<string, unknown>).message));
 	}
 	return new Error(`${fallback} (status ${resp.status})`);
 }

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Card, Input, Button, Badge } from '$lib/ui';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { login } from '$lib/services/api/auth';
 
 	let username = '';
@@ -14,7 +15,7 @@
 		loading = true;
 		try {
 			await login(username.trim(), password);
-			await goto('/dashboard');
+			await goto(resolve('/dashboard'));
 		} catch (err: unknown) {
 			errorMsg = err instanceof Error ? err.message : 'Error de autenticación';
 		} finally {
@@ -25,19 +26,41 @@
 
 <section class="auth">
 	<div class="auth-container">
-		<Card padded hoverable outlined title="Bienvenido" subtitle="Accede a Odonto Gestión">
+		<Card
+			padded
+			hoverable
+			outlined
+			title="Bienvenido"
+			subtitle="Accede al Sistema Odontológico"
+			className=""
+			ariaLabel="Formulario de inicio de sesión"
+		>
 			<div class="brand-head">
-				<div class="brand-mark" aria-hidden="true">🦷</div>
+				<div class="brand-mark" aria-hidden="true">
+					<svg
+						width="32"
+						height="32"
+						viewBox="0 0 32 32"
+						fill="none"
+						xmlns="http://www.w3.org/2000/svg"
+					>
+						<path
+							d="M16 4C10.48 4 6 8.48 6 14c0 3.5 1.8 6.6 4.5 8.4.3.2.5.5.5.8v2.3c0 .8.7 1.5 1.5 1.5h7c.8 0 1.5-.7 1.5-1.5v-2.3c0-.3.2-.6.5-.8 2.7-1.8 4.5-4.9 4.5-8.4 0-5.52-4.48-10-10-10zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z"
+							fill="currentColor"
+						/>
+					</svg>
+				</div>
 				<div class="brand-text">
-					<h1 class="brand-title">Odonto Gestión</h1>
-					<p class="brand-subtitle text-soft">Sistema de gestión dental</p>
+					<h1 class="brand-title">Sistema Odontológico</h1>
+					<p class="brand-subtitle text-soft">Gestión Clínica Profesional</p>
 				</div>
 			</div>
 
 			<form class="form-grid" on:submit|preventDefault={onSubmit}>
 				{#if errorMsg}
 					<div class="alert-error">
-						<Badge variant="error" pill>Error</Badge>
+						<Badge variant="error" pill ariaLabel="Error de autenticación" className="">Error</Badge
+						>
 						<span>{errorMsg}</span>
 					</div>
 				{/if}
@@ -48,7 +71,6 @@
 					description="Ingresa tu usuario para continuar"
 					name="username"
 					id="username"
-					autocomplete="username"
 					disabled={loading}
 					required
 				/>
@@ -60,20 +82,27 @@
 					description="Ingresa tu contraseña"
 					name="password"
 					id="password"
-					autocomplete="current-password"
 					disabled={loading}
 					required
 				/>
 
 				<div class="actions">
-					<Button variant="primary" type="submit" disabled={loading}>
+					<Button
+						variant="primary"
+						type="submit"
+						disabled={loading}
+						ariaLabel="Iniciar sesión"
+						block
+					>
 						{loading ? 'Ingresando...' : 'Entrar'}
 					</Button>
 					<Button
 						variant="outline"
-						on:click={() => goto('/dashboard')}
+						on:click={() => goto(resolve('/dashboard'))}
 						type="button"
-						disabled={loading}>Ir al dashboard</Button
+						disabled={loading}
+						ariaLabel="Ir al dashboard"
+						block>Ir al dashboard</Button
 					>
 				</div>
 			</form>
@@ -111,11 +140,9 @@
 		height: 56px;
 		display: grid;
 		place-items: center;
-		background: var(--color-brand-100);
-		color: var(--color-brand-700);
+		background: linear-gradient(135deg, var(--color-brand-500), var(--color-brand-600));
+		color: var(--color-white);
 		border-radius: var(--radius-md);
-		border: 1px solid var(--color-brand-200);
-		font-size: var(--font-size-xl);
 		box-shadow: var(--shadow-sm);
 	}
 
@@ -149,33 +176,10 @@
 		border-radius: var(--radius-sm);
 	}
 
-	.remember {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-2);
-		font-size: var(--font-size-sm);
-		color: var(--color-text);
-		user-select: none;
-	}
-
 	.actions {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: var(--space-2);
-		margin-top: var(--space-3);
-	}
-
-	@media (max-width: 520px) {
-		.actions {
-			grid-template-columns: 1fr;
-		}
-	}
-
-	.tips {
 		display: flex;
-		gap: var(--space-2);
-		align-items: center;
-		margin-top: var(--space-3);
-		flex-wrap: wrap;
+		flex-direction: column;
+		gap: var(--space-3);
+		margin-top: var(--space-4);
 	}
 </style>

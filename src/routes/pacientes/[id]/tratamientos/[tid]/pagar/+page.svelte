@@ -2,21 +2,17 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { get as getStore } from 'svelte/store';
-	import { goto } from '$app/navigation';
 	import { Card, Input, Button, Badge } from '$lib/ui';
 
+	import { getPacienteById, type Paciente as PacienteModel } from '$lib/services/api/pacientes';
+	import { getTratamiento, type Tratamiento } from '$lib/services/api/tratamientos';
 	import {
-		seedMockData,
-		getPacienteById,
-		listConsultasByPaciente,
-		listTratamientosByConsulta,
-		computeTratamientoSaldo,
 		listPagosByTratamiento,
 		createPago,
-		type Paciente as PacienteModel,
-		type TratamientoConSaldo,
+		getTodayDate,
+		getMetodoPagoLabel,
 		type Pago
-	} from '$lib/services/api/pacientes';
+	} from '$lib/services/api/pagos';
 
 	// Route params
 	let pacienteId: number | null = null;
@@ -24,8 +20,9 @@
 
 	// Data
 	let paciente: PacienteModel | null = null;
-	let tratamiento: TratamientoConSaldo | null = null;
+	let tratamiento: Tratamiento | null = null;
 	let pagos: Pago[] = [];
+	let saldoPendiente = 0;
 
 	// Form state
 	let monto: string = '';
@@ -37,12 +34,6 @@
 	let loading = true;
 	let submitting = false;
 	let error: string | null = null;
-
-	// Helpers
-	function todayIsoDate(): string {
-		const d = new Date();
-		return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().substring(0, 10);
-	}
 
 	function formatMoney(n: number | null | undefined): string {
 		const v = typeof n === 'number' ? n : 0;
@@ -63,49 +54,39 @@
 		return 'error';
 	}
 
-	function findTratamientoById(
-		pacienteId: number,
-		tratamientoId: number
-	): TratamientoConSaldo | null {
-		const consultas = listConsultasByPaciente(pacienteId);
-		for (const c of consultas) {
-			const ts = listTratamientosByConsulta(c.id);
-			const t = ts.find((x) => x.id === tratamientoId);
-			if (t) {
-				return computeTratamientoSaldo(t);
-			}
-		}
-		return null;
-	}
-
-	function reloadData() {
+	async function reloadData() {
 		loading = true;
 		error = null;
 		try {
-			seedMockData();
-
 			if (pacienteId === null || tratamientoId === null) {
 				throw new Error('Parámetros de ruta inválidos.');
 			}
 
-			paciente = getPacienteById(pacienteId);
+			// Obtener paciente
+			paciente = await getPacienteById(pacienteId);
 			if (!paciente) throw new Error(`Paciente ${pacienteId} no encontrado.`);
 
-			tratamiento = findTratamientoById(pacienteId, tratamientoId);
+			// Obtener tratamiento con información de pagos
+			tratamiento = await getTratamiento(tratamientoId);
 			if (!tratamiento)
 				throw new Error(`Tratamiento ${tratamientoId} no encontrado para el paciente.`);
 
-			pagos = listPagosByTratamiento(tratamientoId);
+			// Cargar pagos existentes
+			pagos = await listPagosByTratamiento(tratamientoId);
+
+			// Calcular saldo pendiente manualmente si no viene del backend
+			const totalPagado = pagos.reduce((sum, p) => sum + p.monto, 0);
+			saldoPendiente = tratamiento.costo_total - totalPagado;
 
 			// Defaults
-			fecha_pago = todayIsoDate();
+			fecha_pago = getTodayDate();
 			metodo_pago = '';
 			observaciones = '';
 			monto = '';
 
 			loading = false;
-		} catch (e: any) {
-			error = e?.message || 'Error cargando datos.';
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Error cargando datos.';
 			loading = false;
 		}
 	}
@@ -123,13 +104,18 @@
 	});
 
 	function goBack() {
-		if (pacienteId !== null) goto(`/pacientes/${pacienteId}`);
+		if (pacienteId !== null) {
+			window.location.href = `/pacientes/${pacienteId}`;
+		}
 	}
 
 	function validate(): string | null {
 		if (!tratamientoId) return 'Tratamiento inválido.';
 		const amt = Number(monto);
 		if (Number.isNaN(amt) || amt <= 0) return 'El monto debe ser un número válido mayor a 0.';
+		if (amt > saldoPendiente) {
+			return `El monto excede el saldo pendiente (${formatMoney(saldoPendiente)})`;
+		}
 		return null;
 	}
 
@@ -143,22 +129,18 @@
 		error = null;
 		submitting = true;
 		try {
-			createPago({
+			await createPago({
 				tratamiento_id: tratamientoId!,
 				monto: Number(monto),
-				fecha_pago: fecha_pago || todayIsoDate(),
-				metodo_pago: metodo_pago || null,
-				observaciones: observaciones || null
+				fecha_pago: fecha_pago || getTodayDate(),
+				metodo_pago: metodo_pago || undefined,
+				observaciones: observaciones || undefined
 			});
 
-			// Recargar pagos y tratamiento para ver saldo actualizado
-			pagos = listPagosByTratamiento(tratamientoId!);
-			tratamiento = findTratamientoById(pacienteId!, tratamientoId!);
-
 			// Navegar al detalle del paciente
-			goto(`/pacientes/${pacienteId}`);
-		} catch (e: any) {
-			error = e?.message || 'Error registrando el pago.';
+			window.location.href = `/pacientes/${pacienteId}`;
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Error registrando el pago.';
 		} finally {
 			submitting = false;
 		}
@@ -167,20 +149,20 @@
 
 <section class="registrar-pago">
 	{#if loading}
-		<Card padded outlined>
+		<Card padded outlined title="" subtitle="" className="" ariaLabel="Cargando">
 			<div class="loading">
 				<div class="spinner" aria-hidden="true"></div>
 				<div>Cargando tratamiento...</div>
 			</div>
 		</Card>
 	{:else if error}
-		<Card padded outlined>
+		<Card padded outlined title="" subtitle="" className="" ariaLabel="Error">
 			<div class="error">
-				<Badge variant="error" pill>Error</Badge>
+				<Badge variant="error" pill ariaLabel="Error" className="">Error</Badge>
 				<div class="msg">{error}</div>
 			</div>
 			<div class="row-actions">
-				<Button variant="outline" on:click={goBack}>Volver</Button>
+				<Button variant="outline" on:click={goBack} ariaLabel="Volver">Volver</Button>
 			</div>
 		</Card>
 	{:else if paciente && tratamiento}
@@ -193,6 +175,8 @@
 			}`}
 			hoverable
 			outlined
+			className=""
+			ariaLabel="Formulario de pago"
 		>
 			<div class="grid-2">
 				<div class="info-item">
@@ -205,13 +189,18 @@
 				</div>
 				<div class="info-item">
 					<div class="label">Pagado</div>
-					<div class="value">{formatMoney(tratamiento.totalPagos)}</div>
+					<div class="value">{formatMoney(pagos.reduce((sum, p) => sum + p.monto, 0))}</div>
 				</div>
 				<div class="info-item">
 					<div class="label">Saldo</div>
 					<div class="value">
-						<Badge variant={estadoSaldoBadgeVariant(tratamiento.saldoPendiente)} pill>
-							{formatMoney(tratamiento.saldoPendiente)}
+						<Badge
+							variant={estadoSaldoBadgeVariant(saldoPendiente)}
+							pill
+							ariaLabel="Saldo"
+							className=""
+						>
+							{formatMoney(saldoPendiente)}
 						</Badge>
 					</div>
 				</div>
@@ -234,6 +223,8 @@
 						bind:value={fecha_pago}
 						name="fecha_pago"
 						id="fecha_pago"
+						placeholder=""
+						description=""
 					/>
 					<Input
 						type="number"
@@ -243,6 +234,7 @@
 						name="monto"
 						id="monto"
 						required
+						description="Máximo: {formatMoney(saldoPendiente)}"
 					/>
 				</div>
 				<div class="grid-2">
@@ -253,6 +245,7 @@
 						bind:value={metodo_pago}
 						name="metodo_pago"
 						id="metodo_pago"
+						description=""
 					/>
 					<Input
 						type="text"
@@ -261,26 +254,41 @@
 						bind:value={observaciones}
 						name="observaciones"
 						id="observaciones"
+						description=""
 					/>
 				</div>
 			</div>
 
 			{#if error}
 				<div class="error inline">
-					<Badge variant="error" pill>Error</Badge>
+					<Badge variant="error" pill ariaLabel="Error" className="">Error</Badge>
 					<div class="msg">{error}</div>
 				</div>
 			{/if}
 
 			<div class="row-actions">
-				<Button variant="primary" on:click={handleSubmit} type="button" disabled={submitting}>
+				<Button
+					variant="primary"
+					on:click={handleSubmit}
+					type="button"
+					disabled={submitting}
+					ariaLabel="Guardar pago"
+				>
 					{submitting ? 'Guardando...' : 'Guardar pago'}
 				</Button>
-				<Button variant="outline" on:click={goBack} type="button">Cancelar</Button>
+				<Button variant="outline" on:click={goBack} type="button" ariaLabel="Cancelar"
+					>Cancelar</Button
+				>
 			</div>
 		</Card>
 
-		<Card title="Pagos registrados" subtitle={`Tratamiento #${tratamiento.id}`} hoverable>
+		<Card
+			title="Pagos registrados"
+			subtitle={`Tratamiento #${tratamiento.id}`}
+			hoverable
+			className=""
+			ariaLabel="Lista de pagos"
+		>
 			<div class="tabla-wrapper">
 				<table class="table">
 					<thead>
@@ -292,11 +300,11 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each pagos as p}
+						{#each pagos as p (p.id)}
 							<tr>
 								<td>{formatDay(p.fecha_pago)}</td>
 								<td>{formatMoney(p.monto)}</td>
-								<td>{p.metodo_pago || '—'}</td>
+								<td>{getMetodoPagoLabel(p.metodo_pago)}</td>
 								<td>{p.observaciones || '—'}</td>
 							</tr>
 						{:else}

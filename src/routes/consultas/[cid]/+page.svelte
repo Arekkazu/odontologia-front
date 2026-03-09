@@ -2,21 +2,26 @@
 	import { Card, Button, Badge } from '$lib/ui';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
-	import {
-		getPacienteById,
-		listTratamientosByConsulta,
-		computeTratamientoSaldo
-	} from '$lib/services/api/pacientes';
+	import { getPacienteById } from '$lib/services/api/pacientes';
 	import { getConsulta } from '$lib/services/api/consultas';
 	import type { Consulta } from '$lib/services/api/consultas';
-	import type { Paciente, TratamientoConSaldo } from '$lib/services/api/pacientes';
+	import type { Paciente } from '$lib/services/api/pacientes';
+	import {
+		listTratamientosConPagosByConsulta,
+		cambiarEstadoTratamiento,
+		getEstadoLabel,
+		getEstadoBadgeVariant,
+		type TratamientoConPagos,
+		type EstadoTratamiento
+	} from '$lib/services/api/tratamientos';
 
 	let consultaId: number | null = null;
 	let consulta: Consulta | null = null;
 	let paciente: Paciente | null = null;
-	let tratamientos: TratamientoConSaldo[] = [];
+	let tratamientos: TratamientoConPagos[] = [];
 	let loading = true;
 	let error = '';
+	let cambiandoEstado: { [key: number]: boolean } = {};
 
 	function formatMoney(amount: number): string {
 		return new Intl.NumberFormat('es-ES', {
@@ -49,11 +54,34 @@
 	}
 
 	function nuevoTratamiento(consultaIdParam: number) {
-		window.location.href = `/pacientes/${consulta?.paciente_id}/consultas/${consultaIdParam}/tratamiento/nuevo`;
+		window.location.href = `/consultas/${consultaIdParam}/tratamiento/nuevo`;
 	}
 
 	function registrarPago(tratamientoId: number) {
 		window.location.href = `/pacientes/${consulta?.paciente_id}/tratamientos/${tratamientoId}/pagar`;
+	}
+
+	async function cargarTratamientos() {
+		if (!consultaId) return;
+		try {
+			tratamientos = await listTratamientosConPagosByConsulta(consultaId);
+		} catch (err) {
+			console.error('Error cargando tratamientos:', err);
+		}
+	}
+
+	async function handleCambiarEstado(tratamientoId: number, nuevoEstado: EstadoTratamiento) {
+		if (!consultaId) return;
+		cambiandoEstado[tratamientoId] = true;
+		try {
+			await cambiarEstadoTratamiento(tratamientoId, nuevoEstado);
+			await cargarTratamientos();
+		} catch (err) {
+			console.error('Error cambiando estado:', err);
+			error = err instanceof Error ? err.message : 'Error al cambiar el estado';
+		} finally {
+			cambiandoEstado[tratamientoId] = false;
+		}
 	}
 
 	onMount(async () => {
@@ -86,8 +114,8 @@
 				}
 			}
 
-			// Cargar tratamientos (mocks por ahora)
-			tratamientos = listTratamientosByConsulta(consultaId).map(computeTratamientoSaldo);
+			// Cargar tratamientos desde el backend
+			await cargarTratamientos();
 		} catch (err) {
 			console.error('Error cargando consulta:', err);
 			error = err instanceof Error ? err.message : 'Consulta no encontrada';
@@ -228,6 +256,9 @@
 									<div class="treatment-title">
 										<strong>{tratamiento.descripcion}</strong>
 										<Badge variant="info">#{tratamiento.id}</Badge>
+										<Badge variant={getEstadoBadgeVariant(tratamiento.estado)}>
+											{getEstadoLabel(tratamiento.estado)}
+										</Badge>
 									</div>
 									<div class="treatment-cost">
 										{formatMoney(tratamiento.costo_total)}
@@ -249,21 +280,38 @@
 									{/if}
 								</div>
 
+								<div class="treatment-state">
+									<label for="estado-{tratamiento.id}" class="state-label">Estado:</label>
+									<select
+										id="estado-{tratamiento.id}"
+										class="state-select"
+										value={tratamiento.estado}
+										on:change={(e) => handleCambiarEstado(tratamiento.id, e.currentTarget.value)}
+										disabled={cambiandoEstado[tratamiento.id]}
+									>
+										<option value="propuesto">Propuesto</option>
+										<option value="aceptado">Aceptado</option>
+										<option value="en_curso">En curso</option>
+										<option value="finalizado">Finalizado</option>
+										<option value="cancelado">Cancelado</option>
+									</select>
+								</div>
+
 								<div class="treatment-financials">
 									<div class="financial-item">
 										<span class="label">Pagado:</span>
-										<span class="text-success">{formatMoney(tratamiento.totalPagos)}</span>
+										<span class="text-success">{formatMoney(tratamiento.total_pagado)}</span>
 									</div>
 									<div class="financial-item">
 										<span class="label">Saldo:</span>
-										<Badge variant={tratamiento.saldoPendiente > 0 ? 'warning' : 'success'}>
-											{formatMoney(tratamiento.saldoPendiente)}
+										<Badge variant={tratamiento.saldo_pendiente > 0 ? 'warning' : 'success'}>
+											{formatMoney(tratamiento.saldo_pendiente)}
 										</Badge>
 									</div>
 								</div>
 
 								<div class="treatment-actions">
-									{#if tratamiento.saldoPendiente > 0}
+									{#if tratamiento.saldo_pendiente > 0}
 										<Button
 											variant="primary"
 											size="sm"
@@ -484,6 +532,46 @@
 	.detail-label {
 		color: var(--color-text-soft);
 		font-weight: 600;
+	}
+
+	.treatment-state {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		padding: var(--space-2) 0;
+	}
+
+	.state-label {
+		font-size: var(--font-size-sm);
+		font-weight: 600;
+		color: var(--color-text-soft);
+	}
+
+	.state-select {
+		font-family: var(--font-sans);
+		padding: var(--space-1) var(--space-2);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		background: var(--color-white);
+		color: var(--color-text);
+		font-size: var(--font-size-sm);
+		cursor: pointer;
+		transition: border-color var(--transition-fast);
+	}
+
+	.state-select:hover:not(:disabled) {
+		border-color: var(--color-gray-300);
+	}
+
+	.state-select:focus {
+		outline: none;
+		border-color: var(--color-focus);
+		box-shadow: var(--shadow-focus);
+	}
+
+	.state-select:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 
 	.treatment-financials {

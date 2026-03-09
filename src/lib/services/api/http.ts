@@ -22,7 +22,10 @@ export interface ApiResponse<T> {
 
 /** Construye una URL con base y query params */
 function buildUrl(base: string, path: string, query?: RequestOptions['query']): string {
-	const url = new URL(path, base.endsWith('/') ? base : `${base}/`);
+	// Remover el slash inicial del path si existe para evitar que sea tratado como absoluto
+	const cleanPath = path.startsWith('/') ? path.slice(1) : path;
+	const cleanBase = base.endsWith('/') ? base : `${base}/`;
+	const url = new URL(cleanPath, cleanBase);
 	if (query) {
 		Object.entries(query).forEach(([key, value]) => {
 			if (value === undefined || value === null) return;
@@ -44,14 +47,7 @@ export class ApiClient {
 	}
 
 	async request<T = unknown>(path: string, opts: RequestOptions = {}): Promise<ApiResponse<T>> {
-		const {
-			method = 'GET',
-			query,
-			json,
-			headers,
-			skipAuth = false,
-			...rest
-		} = opts;
+		const { method = 'GET', query, json, headers, skipAuth = false, ...rest } = opts;
 
 		const url = buildUrl(this.base, path, query);
 
@@ -62,7 +58,7 @@ export class ApiClient {
 		};
 
 		const finalHeaders: HeadersInit = {
-			'Accept': 'application/json',
+			Accept: 'application/json',
 			...(json !== undefined ? { 'Content-Type': 'application/json' } : {}),
 			...headers
 		};
@@ -94,15 +90,27 @@ export class ApiClient {
 		return this.request<T>(path, { ...options, method: 'GET' });
 	}
 
-	post<T = unknown>(path: string, json?: unknown, options?: Omit<RequestOptions, 'method' | 'json'>) {
+	post<T = unknown>(
+		path: string,
+		json?: unknown,
+		options?: Omit<RequestOptions, 'method' | 'json'>
+	) {
 		return this.request<T>(path, { ...options, method: 'POST', json });
 	}
 
-	put<T = unknown>(path: string, json?: unknown, options?: Omit<RequestOptions, 'method' | 'json'>) {
+	put<T = unknown>(
+		path: string,
+		json?: unknown,
+		options?: Omit<RequestOptions, 'method' | 'json'>
+	) {
 		return this.request<T>(path, { ...options, method: 'PUT', json });
 	}
 
-	patch<T = unknown>(path: string, json?: unknown, options?: Omit<RequestOptions, 'method' | 'json'>) {
+	patch<T = unknown>(
+		path: string,
+		json?: unknown,
+		options?: Omit<RequestOptions, 'method' | 'json'>
+	) {
 		return this.request<T>(path, { ...options, method: 'PATCH', json });
 	}
 
